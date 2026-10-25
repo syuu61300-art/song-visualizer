@@ -14,6 +14,11 @@ body{font-family:var(--ui);padding-left:max(16px,env(safe-area-inset-left,0px));
 .wrap{display:flex;gap:20px;justify-content:center;align-items:flex-start;flex-wrap:wrap}
 .stage{position:relative;height:min(90vh,980px);aspect-ratio:9/16;max-width:100%;border-radius:14px;overflow:hidden;background:#000;box-shadow:0 0 0 1px var(--line),0 30px 80px -30px var(--accent);transition:box-shadow .4s}
 .stage canvas{width:100%;height:100%;display:block}
+.stage.land{aspect-ratio:16/9;height:auto;width:min(100%,960px)}
+.stage:fullscreen{width:100vw;height:100vh;max-width:none;aspect-ratio:auto;border-radius:0;background:#000}
+.stage:-webkit-full-screen{width:100vw;height:100vh;max-width:none;aspect-ratio:auto;border-radius:0;background:#000}
+.stage:fullscreen canvas{object-fit:contain}
+.stage:-webkit-full-screen canvas{object-fit:contain}
 .fs{position:absolute;right:10px;bottom:10px;width:auto;flex:none;padding:6px 10px;font-size:11px;opacity:.55;background:rgba(0,0,0,.5)}
 .fs:hover{opacity:1}
 .panel{width:360px;max-width:100%;display:flex;flex-direction:column;gap:16px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px}
@@ -26,7 +31,10 @@ h1{font-family:var(--mono);font-size:15px;letter-spacing:.16em;margin:0;text-tra
 .field{display:flex;flex-direction:column;gap:6px}
 .field label,.lbl{font-size:12px;color:var(--muted)}
 .seg{display:grid;grid-template-columns:1fr 1fr;gap:6px}
-.seg button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#14041f}
+.seg3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.seg3 button{padding:8px 4px;font-size:12px}
+.strip{width:100%;height:40px;display:block;border-radius:8px;background:var(--well);border:1px solid var(--line)}
+.seg button[aria-pressed="true"],.seg3 button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#14041f}
 .presets{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}
 .pre{padding:4px 2px 5px;display:flex;flex-direction:column;align-items:center;gap:3px;font-weight:400;font-size:9.5px;line-height:1.2;border-radius:8px;background:var(--well);min-width:0}
 .pre canvas{width:100%;max-width:52px;aspect-ratio:1;display:block}
@@ -39,7 +47,7 @@ input[type=file]::file-selector-button{background:#1d1229;color:var(--fg);border
 input[type=range]{accent-color:var(--accent);width:100%}
 input[type=color]{width:42px;height:28px;border:1px solid var(--line);background:none;border-radius:6px;padding:0}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-.sl{display:grid;grid-template-columns:76px 1fr 34px;gap:8px;align-items:center;font-size:12px;color:var(--muted)}
+.sl{display:grid;grid-template-columns:76px 1fr 44px;gap:8px;align-items:center;font-size:12px;color:var(--muted)}
 .sl output{font-family:var(--mono);font-size:10.5px;text-align:right;font-variant-numeric:tabular-nums}
 button{font:inherit;font-weight:700;font-size:13px;cursor:pointer;border-radius:9px;padding:10px 12px;border:1px solid var(--line);background:#1d1229;color:var(--fg);flex:1 1 auto}
 button.primary{background:var(--accent);border-color:var(--accent);color:#14041f}
@@ -95,7 +103,7 @@ video{width:100%;border-radius:8px}
         <div class="row" style="margin-top:8px"><button id="sysBtn" class="primary">端末の音を取り込む</button></div>
       </div>
       <div id="p-mic" hidden>
-        <p class="hint">スピーカーの音をマイクで拾って反応します。スマホでも使えますが、端末の音モードより精度は落ちます。</p>
+        <p class="hint">スピーカーの音をマイクで拾って反応します。最初の1.5秒で周囲のノイズを学習し、以後も自動で差し引くので、エアコンや話し声には反応しにくくなります（確認のため、反応がほんの少し遅れます）。</p>
         <div class="row" style="margin-top:8px"><button id="micBtn" class="primary">マイクを開始</button></div>
       </div>
       <div id="p-demo" hidden>
@@ -106,11 +114,63 @@ video{width:100%;border-radius:8px}
     </div>
 
     <div class="group">
+      <span class="cap">ビート追加 <b id="beatInfo">曲を選ぶと自動で解析します</b></span>
+      <label class="check"><input id="beatOn" type="checkbox" checked> 重低音のキックに強いビートを重ねる</label>
+      <div class="seg3" role="group" aria-label="キックの種類">
+        <button id="k-punch" aria-pressed="true">パンチ</button>
+        <button id="k-808" aria-pressed="false">808 サブ</button>
+        <button id="k-hard" aria-pressed="false">ハード</button>
+      </div>
+      <div class="sl"><label for="bsens">検出の感度</label><input id="bsens" type="range" min="0.5" max="2" step="0.05" value="1"><output id="o-bsens">1.00</output></div>
+      <div class="sl"><label for="boff">タイミング</label><input id="boff" type="range" min="-80" max="80" step="5" value="0"><output id="o-boff">0ms</output></div>
+      <label class="check"><input id="duck" type="checkbox" checked> サイドチェイン（キックの瞬間だけ曲を下げる）</label>
+      <canvas id="strip" class="strip" width="640" height="80" aria-label="検出したキックの位置"></canvas>
+      <p class="hint">音楽ファイルは再生前に曲全体を解析し、キックの位置ぴったりにビートを重ねます。端末の音とマイクでは、聞こえた瞬間に重ねます（ほんの少し遅れます）。</p>
+    </div>
+
+    <div class="group">
+      <span class="cap">音量</span>
+      <div class="sl"><label for="vMusic">曲</label><input id="vMusic" type="range" min="0" max="1.5" step="0.05" value="1"><output id="o-vMusic">100%</output></div>
+      <div class="sl"><label for="vBeat">追加ビート</label><input id="vBeat" type="range" min="0" max="2" step="0.05" value="0.9"><output id="o-vBeat">90%</output></div>
+      <div class="sl"><label for="vBass">低音ブースト</label><input id="vBass" type="range" min="0" max="12" step="0.5" value="4"><output id="o-vBass">+4dB</output></div>
+      <div class="sl"><label for="vMaster">全体</label><input id="vMaster" type="range" min="0" max="1.5" step="0.05" value="1"><output id="o-vMaster">100%</output></div>
+      <p class="hint">端末の音モードでは、曲の音量と低音ブーストは効きません。曲の音量は再生しているアプリ側で調整してください。</p>
+    </div>
+
+    <div class="group">
+      <span class="cap">背景</span>
+      <div class="field">
+        <label for="bgFile">画像または動画（jpg / png / mp4 / webm など）</label>
+        <input id="bgFile" type="file" accept="image/*,video/*">
+      </div>
+      <div class="seg" role="group" aria-label="背景の色">
+        <button id="bgm-tint" aria-pressed="true">テーマ色で着色</button>
+        <button id="bgm-raw" aria-pressed="false">元の色のまま</button>
+      </div>
+      <div class="sl"><label for="bgDim">明るさ</label><input id="bgDim" type="range" min="0.2" max="1.5" step="0.05" value="0.9"><output id="o-bgDim">90%</output></div>
+      <button id="bgClear" type="button" disabled>背景を外す（プリセットの背景に戻す）</button>
+      <p class="hint">背景を読み込まない場合は、プリセットごとの背景（霧・グリッド・星空・トンネル・オーロラ）になります。</p>
+    </div>
+
+    <div class="group">
       <span class="cap">検出</span>
       <div class="meters">
         <span>BASS</span><div class="meter"><i id="meter"></i></div>
         <span>KICK<span class="kick" id="kickDot"></span></span><span class="status" id="status">待機中</span>
+        <span>MID<span class="kick" id="midDot"></span></span><span>HIGH<span class="kick" id="hiDot"></span></span>
+        <span>勢い</span><div class="meter"><i id="intMeter"></i></div>
       </div>
+    </div>
+
+    <div class="group">
+      <span class="cap">カメラ <b id="camInfo">待機中</b></span>
+      <label class="check"><input id="camOn" type="checkbox" checked> カメラ自動追跡（ショットを自動で切り替える）</label>
+      <div class="seg3" role="group" aria-label="カメラの動き">
+        <button id="cs-auto" aria-pressed="true">自動</button>
+        <button id="cs-smooth" aria-pressed="false">なめらか</button>
+        <button id="cs-hard" aria-pressed="false">激しい</button>
+      </div>
+      <p class="hint">「自動」では曲の勢いを測って動きを変えます。静かな曲ではゆっくり滑らかに、激しい曲ではキック＝ズーム、スネア＝傾き、ハイハット＝細かい揺れと、音ごとに別々の動きをします。</p>
     </div>
 
     <div class="group">
@@ -126,14 +186,14 @@ video{width:100%;border-radius:8px}
         <label for="logo">中央の文字</label>
         <input id="logo" type="text" value="RENTHANY" maxlength="16">
       </div>
-      <div class="field">
-        <label for="bgFile">背景画像（任意・白黒化してメイン色で着色）</label>
-        <input id="bgFile" type="file" accept="image/*">
-      </div>
     </div>
 
     <div class="group">
       <span class="cap">書き出し</span>
+      <div class="seg" role="group" aria-label="画面の比率">
+        <button id="ar-port" aria-pressed="true">縦 9:16</button>
+        <button id="ar-land" aria-pressed="false">横 16:9</button>
+      </div>
       <div class="row"><button id="recBtn">録画開始</button></div>
       <div id="recOut" class="field"></div>
     </div>
@@ -146,7 +206,7 @@ video{width:100%;border-radius:8px}
 const $=id=>document.getElementById(id);
 const TAU=Math.PI*2,D=Math.PI/180;
 const cv=$('cv'),c=cv.getContext('2d');
-const W=720,H=1280,CX=360,CY=600;
+let W=720,H=1280,CX=360,CY=600,U=1;
 const mk=(w,h)=>{const k=document.createElement('canvas');k.width=w;k.height=h;return k};
 const scene=mk(W,H),s=scene.getContext('2d');
 const ringL=mk(W,H),r=ringL.getContext('2d');
@@ -215,17 +275,128 @@ function shapePath(x,R,sh,info,def){
 let SI=shapeInfo(P.shape);
 
 /* ================= audio graph ================= */
-let actx,analyser,freq=null,bus,outGain,recDest,mediaSrc,demoGain,streamSrc=null,stream=null;
+let actx,analyser,freq=null,bus,master,mixBus,recDest,mediaSrc,demoGain,streamSrc=null,stream=null;
+let eq,musicGain,duckG,beatGain,beatToBus,curves={},noiseBuf=null;
+const vol={music:1,beat:0.9,bass:4,master:1};
+/* 再生系:  曲 → 低音EQ → 曲の音量 → サイドチェイン ┐
+            追加ビート → ビートの音量 ─────────────┼→ 全体音量 → スピーカー / 録画
+            デモ ──────────────────────────────┘
+   解析系:  EQ後の曲・デモ・追加ビート（ファイル時のみ）・取り込んだ音 → アナライザー */
 function ensureCtx(){
   if(actx)return;
   actx=new (window.AudioContext||window.webkitAudioContext)();
   analyser=actx.createAnalyser();analyser.fftSize=2048;analyser.smoothingTimeConstant=0.4;
   freq=new Uint8Array(analyser.frequencyBinCount);
   bus=actx.createGain();bus.connect(analyser);
-  try{recDest=actx.createMediaStreamDestination();bus.connect(recDest)}catch(e){}
-  outGain=actx.createGain();outGain.connect(actx.destination);
-  mediaSrc=actx.createMediaElementSource(audio);mediaSrc.connect(bus);mediaSrc.connect(outGain);
-  demoGain=actx.createGain();demoGain.gain.value=0.9;demoGain.connect(bus);demoGain.connect(outGain);
+  master=actx.createGain();master.gain.value=vol.master;master.connect(actx.destination);
+  try{recDest=actx.createMediaStreamDestination();master.connect(recDest)}catch(e){}
+  mixBus=actx.createGain();mixBus.connect(master);
+  mediaSrc=actx.createMediaElementSource(audio);
+  eq=actx.createBiquadFilter();eq.type='lowshelf';eq.frequency.value=90;eq.gain.value=vol.bass;
+  musicGain=actx.createGain();musicGain.gain.value=vol.music;
+  duckG=actx.createGain();
+  mediaSrc.connect(eq);eq.connect(musicGain);musicGain.connect(duckG);duckG.connect(mixBus);eq.connect(bus);
+  demoGain=actx.createGain();demoGain.gain.value=0.9;demoGain.connect(bus);demoGain.connect(mixBus);
+  beatGain=actx.createGain();beatGain.gain.value=vol.beat;beatGain.connect(mixBus);
+  beatToBus=actx.createGain();beatGain.connect(beatToBus);beatToBus.connect(bus);
+  for(const k in KICKS)curves[k]=driveCurve(KICKS[k].drive);
+  routeBeat();
+}
+function routeBeat(){if(beatToBus)beatToBus.gain.value=(mode==='sys'||mode==='mic')?0:1} // 取り込み時は自分のビートを再検出しない
+function getNoise(){if(!noiseBuf){noiseBuf=actx.createBuffer(1,actx.sampleRate*0.3,actx.sampleRate);const d=noiseBuf.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1}return noiseBuf}
+
+/* ================= kick synth ================= */
+const KICKS={
+  punch:{wave:'sine',    f0:190,f1:48,sweep:0.07,amp:1,   decay:0.38,click:0.35,drive:6},
+  '808':{wave:'sine',    f0:120,f1:40,sweep:0.06,amp:0.95,decay:1.0, click:0.12,drive:3},
+  hard: {wave:'triangle',f0:270,f1:55,sweep:0.05,amp:0.9, decay:0.26,click:0.5, drive:18},
+};
+let kickType='punch',beatOn=true,duckOn=true,bsens=1,boff=0;
+function driveCurve(k){const n=1024,cu=new Float32Array(n);for(let i=0;i<n;i++){const x=i/(n-1)*2-1;cu[i]=(1+k)*x/(1+k*Math.abs(x))}return cu}
+function playKick(when,str){
+  if(!actx)return;
+  const T=KICKS[kickType],v=(0.55+0.45*str)*T.amp;
+  const o=actx.createOscillator(),ws=actx.createWaveShaper(),g=actx.createGain();
+  ws.curve=curves[kickType];ws.oversample='2x';o.type=T.wave;
+  o.frequency.setValueAtTime(T.f0,when);o.frequency.exponentialRampToValueAtTime(T.f1,when+T.sweep);
+  g.gain.setValueAtTime(0.0001,when);g.gain.exponentialRampToValueAtTime(v,when+0.004);g.gain.exponentialRampToValueAtTime(0.0001,when+T.decay);
+  o.connect(ws);ws.connect(g);g.connect(beatGain);o.start(when);o.stop(when+T.decay+0.05);
+  if(T.click){
+    const sr=actx.createBufferSource(),hp=actx.createBiquadFilter(),cg=actx.createGain();
+    sr.buffer=getNoise();hp.type='highpass';hp.frequency.value=2500;
+    cg.gain.setValueAtTime(T.click*v,when);cg.gain.exponentialRampToValueAtTime(0.0001,when+0.018);
+    sr.connect(hp);hp.connect(cg);cg.connect(beatGain);sr.start(when);sr.stop(when+0.03);
+  }
+  if(duckOn&&mode==='file'){
+    const d=duckG.gain;d.cancelScheduledValues(when);d.setValueAtTime(0.4,when);d.setTargetAtTime(1,when+0.03,0.09);
+  }
+}
+
+/* ================= offline beat map for files ================= */
+const HOP=0.01;
+let beatEnv=null,beatFlux=null,beatDur=0,beatMap=null,beatBpm=0,kIdx=0,beatJob=0;
+async function analyzeFile(f){
+  const job=++beatJob;beatMap=null;beatEnv=null;$('beatInfo').textContent='曲を解析中…';
+  try{
+    const ab=await f.arrayBuffer();
+    const OAC=window.OfflineAudioContext||window.webkitOfflineAudioContext;
+    const buf=await new OAC(1,1,44100).decodeAudioData(ab);
+    if(job!==beatJob)return;
+    const sr=buf.sampleRate,off=new OAC(1,buf.length,sr);
+    const src=off.createBufferSource();src.buffer=buf;
+    const l1=off.createBiquadFilter(),l2=off.createBiquadFilter();l1.type=l2.type='lowpass';l1.frequency.value=l2.frequency.value=130;
+    src.connect(l1);l1.connect(l2);l2.connect(off.destination);src.start();
+    const out=(await off.startRendering()).getChannelData(0);
+    if(job!==beatJob)return;
+    const hop=Math.round(sr*HOP),n=Math.floor(out.length/hop),env=new Float32Array(n);
+    for(let i=0;i<n;i++){let q=0;const o=i*hop;for(let j=0;j<hop;j++){const v=out[o+j];q+=v*v}env[i]=Math.sqrt(q/hop)}
+    const flux=new Float32Array(n);for(let i=1;i<n;i++)flux[i]=Math.max(0,env[i]-env[i-1]);
+    beatEnv=env;beatFlux=flux;beatDur=buf.duration;pickBeats();
+  }catch(e){if(job===beatJob)$('beatInfo').textContent='解析できませんでした（その場の検出で重ねます）'}
+}
+function pickBeats(){
+  const env=beatEnv,flux=beatFlux;if(!env)return;
+  const n=env.length,sorted=Float32Array.from(env).sort(),p95=sorted[Math.floor(n*0.95)]||1e-6;
+  const ps=new Float64Array(n+1),ps2=new Float64Array(n+1);
+  for(let i=0;i<n;i++){ps[i+1]=ps[i]+flux[i];ps2[i+1]=ps2[i]+flux[i]*flux[i]}
+  const k=1.5/bsens,minStr=0.38/Math.sqrt(bsens),Wn=40,res=[];let lastT=-1;
+  for(let i=4;i<n-6;i++){
+    const f=flux[i];if(f<=0)continue;
+    const a=Math.max(0,i-Wn),b=Math.min(n,i+Wn),m=(ps[b]-ps[a])/(b-a),sd=Math.sqrt(Math.max(0,(ps2[b]-ps2[a])/(b-a)-m*m));
+    if(f<m+k*sd)continue;
+    let isMax=true;for(let j=i-4;j<=i+4;j++)if(flux[j]>f){isMax=false;break}
+    if(!isMax)continue;
+    let pk=0;for(let j=i;j<i+6;j++)pk=Math.max(pk,env[j]);
+    const st=Math.min(1,pk/p95);if(st<minStr)continue;
+    const tt=Math.max(0,i*HOP-0.005);if(tt-lastT<0.12)continue;
+    res.push({t:tt,s:st});lastT=tt;
+  }
+  const hist={};
+  for(let i=1;i<res.length;i++){const d=res[i].t-res[i-1].t;if(d<0.25||d>2)continue;let b=60/d;while(b<85)b*=2;while(b>175)b/=2;b=Math.round(b);hist[b]=(hist[b]||0)+1}
+  let best=0,bc=0;for(const b in hist){const sc=hist[b]+(hist[+b-1]||0)*0.5+(hist[+b+1]||0)*0.5;if(sc>bc){bc=sc;best=+b}}
+  beatMap=res;beatBpm=best;
+  $('beatInfo').textContent=`${res.length} キック${best?` ・ 約 ${best} BPM`:''}`;
+  resyncBeat();
+}
+function resyncBeat(){if(!beatMap)return;const ct=audio.currentTime;let lo=0,hi=beatMap.length;while(lo<hi){const m=(lo+hi)>>1;beatMap[m].t<ct?lo=m+1:hi=m}kIdx=lo}
+audio.addEventListener('seeked',resyncBeat);audio.addEventListener('play',resyncBeat);
+setInterval(()=>{ // 先読みしてキック位置にぴったり予約する
+  if(!actx||mode!=='file'||audio.paused||!beatOn||!beatMap)return;
+  const ct=audio.currentTime,rate=audio.playbackRate||1,now=actx.currentTime,off=boff/1000;
+  while(kIdx<beatMap.length&&beatMap[kIdx].t+off<ct-0.015)kIdx++;
+  while(kIdx<beatMap.length&&beatMap[kIdx].t+off<ct+0.1){const k=beatMap[kIdx++];playKick(Math.max(now,now+(k.t+off-ct)/rate),k.s)}
+},20);
+
+/* beat map strip in the panel */
+const strip=$('strip'),sx=strip.getContext('2d');
+function drawStrip(){
+  const w=strip.width,hh=strip.height;sx.clearRect(0,0,w,hh);
+  sx.font='22px "Zen Kaku Gothic New", sans-serif';sx.textBaseline='middle';
+  if(mode!=='file'){sx.fillStyle='#9a88b3';sx.fillText(beatOn?(live?'聞こえたキックに合わせて重ねています':'入力を開始するとその場で重ねます'):'ビート追加はオフです',16,hh/2);return}
+  if(!beatMap){sx.fillStyle='#9a88b3';sx.fillText(beatEnv===null&&$('beatInfo').textContent.includes('解析中')?'解析中…':'曲を選ぶとキックの位置が表示されます',16,hh/2);return}
+  sx.fillStyle=col(0.12);sx.fillRect(0,hh-2,w,2);
+  for(const k of beatMap){const x=k.t/beatDur*w,hk=6+k.s*(hh-14);sx.fillStyle=col(0.35+k.s*0.6,0.2);sx.fillRect(x,hh-hk,2,hk)}
+  const x=(audio.currentTime||0)/beatDur*w;sx.fillStyle='#fff';sx.fillRect(x-1,0,2,hh);
 }
 
 /* ================= modes ================= */
@@ -239,13 +410,13 @@ function stopAll(){
   live=false;$('sysBtn').textContent='端末の音を取り込む';$('micBtn').textContent='マイクを開始';
 }
 function setMode(m){
-  if(m===mode)return;stopAll();showErr('');mode=m;
+  if(m===mode)return;stopAll();showErr('');mode=m;routeBeat();
   modes.forEach(k=>{$('m-'+k).setAttribute('aria-pressed',k===m);$('p-'+k).hidden=k!==m});
   $('status').textContent='待機中';
 }
 modes.forEach(k=>$('m-'+k).onclick=()=>setMode(k));
 
-$('audioFile').onchange=e=>{const f=e.target.files[0];if(!f)return;audio.src=URL.createObjectURL(f);$('playBtn').disabled=false;$('playBtn').textContent='再生';$('status').textContent=f.name};
+$('audioFile').onchange=e=>{const f=e.target.files[0];if(!f)return;audio.src=URL.createObjectURL(f);analyzeFile(f);$('playBtn').disabled=false;$('playBtn').textContent='再生';$('status').textContent=f.name};
 $('playBtn').onclick=async()=>{ensureCtx();await actx.resume();if(audio.paused){await audio.play();$('playBtn').textContent='一時停止'}else{audio.pause();$('playBtn').textContent='再生'}};
 audio.onended=()=>$('playBtn').textContent='再生';
 
@@ -259,11 +430,14 @@ async function startStream(kind){
       if(!stream.getAudioTracks().length){stream.getTracks().forEach(tr=>tr.stop());stream=null;showErr('音声が共有されていません。もう一度押して「音声を共有」をオンにしてください（Macは「タブ」を選ぶと音声を共有できます）。');return}
     }else stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
     streamSrc=actx.createMediaStreamSource(new MediaStream(stream.getAudioTracks()));
-    streamSrc.connect(bus); // 解析のみ。スピーカーには戻さない
+    if(kind==='mic'){ // マイク: 超低域のゴロゴロをカットしてから解析
+      const hp=actx.createBiquadFilter();hp.type='highpass';hp.frequency.value=28;streamSrc.connect(hp);hp.connect(bus);nf=null;
+    }else streamSrc.connect(bus); // 解析のみ。スピーカーには戻さない
+    if(recDest)streamSrc.connect(recDest); // 録画には入れる
     stream.getTracks().forEach(tr=>tr.onended=()=>{stopAll();$('status').textContent='共有が終了しました'});
     live=true;liveStart=performance.now();
     $(kind==='sys'?'sysBtn':'micBtn').textContent='停止';
-    $('status').textContent=kind==='sys'?'端末の音を解析中':'マイク入力を解析中';
+    $('status').textContent=kind==='sys'?'端末の音を解析中':'周囲のノイズを学習中…';
   }catch(err){
     stream=null;
     showErr(kind==='sys'?'このページ内では端末の音を取り込めません。HTMLファイルをPCのChrome / Edgeで直接開いてお使いください。':'マイクを使えませんでした。ブラウザのマイク許可を確認するか、HTMLファイルを直接開いてお使いください。');
@@ -273,11 +447,11 @@ $('sysBtn').onclick=()=>startStream('sys');
 $('micBtn').onclick=()=>startStream('mic');
 
 /* ---------- demo beat ---------- */
-let demoOn=false,demoTimer=null,nextT=0,step=0,demoStart=0,noiseBuf=null;
+let demoOn=false,demoTimer=null,nextT=0,step=0,demoStart=0;
 const BPM=128,SPB=60/BPM/4;
 function kick(tt){const o=actx.createOscillator(),g=actx.createGain();o.frequency.setValueAtTime(170,tt);o.frequency.exponentialRampToValueAtTime(42,tt+0.13);g.gain.setValueAtTime(1,tt);g.gain.exponentialRampToValueAtTime(0.001,tt+0.45);o.connect(g).connect(demoGain);o.start(tt);o.stop(tt+0.5)}
-function hat(tt,v,len=0.05){if(!noiseBuf){noiseBuf=actx.createBuffer(1,actx.sampleRate*0.3,actx.sampleRate);const d=noiseBuf.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1}
-  const sr=actx.createBufferSource(),f=actx.createBiquadFilter(),g=actx.createGain();sr.buffer=noiseBuf;f.type='highpass';f.frequency.value=len>0.1?1800:7000;g.gain.setValueAtTime(v,tt);g.gain.exponentialRampToValueAtTime(0.001,tt+len);sr.connect(f).connect(g).connect(demoGain);sr.start(tt);sr.stop(tt+len+0.02)}
+function hat(tt,v,len=0.05){
+  const sr=actx.createBufferSource(),f=actx.createBiquadFilter(),g=actx.createGain();sr.buffer=getNoise();f.type='highpass';f.frequency.value=len>0.1?1800:7000;g.gain.setValueAtTime(v,tt);g.gain.exponentialRampToValueAtTime(0.001,tt+len);sr.connect(f).connect(g).connect(demoGain);sr.start(tt);sr.stop(tt+len+0.02)}
 function sub(tt,hz){const o=actx.createOscillator(),f=actx.createBiquadFilter(),g=actx.createGain();o.type='sawtooth';o.frequency.value=hz;f.type='lowpass';f.frequency.value=240;g.gain.setValueAtTime(0.0001,tt);g.gain.exponentialRampToValueAtTime(0.26,tt+0.02);g.gain.exponentialRampToValueAtTime(0.001,tt+SPB*3);o.connect(f).connect(g).connect(demoGain);o.start(tt);o.stop(tt+SPB*3.2)}
 const bassLine=[55,0,0,55,0,0,65.4,0,49,0,0,49,0,0,61.7,0];
 function schedule(){while(nextT<actx.currentTime+0.12){const st=step%16,bar=Math.floor(step/16)%4;if(st%4===0||st===10||(bar===3&&st===14))kick(nextT);hat(nextT,st%2?0.12:0.04);if(st===4||st===12)hat(nextT,0.35,0.18);if(bassLine[st])sub(nextT,bassLine[st]);nextT+=SPB;step++}}
@@ -286,7 +460,18 @@ function stopDemo(){if(!demoOn)return;demoOn=false;clearInterval(demoTimer);$('d
 $('demoBtn').onclick=()=>demoOn?stopDemo():startDemo();
 
 /* ---------- settings ---------- */
-function bindSlider(id,fn){const el=$(id),o=$('o-'+id);el.oninput=()=>{fn(+el.value);o.textContent=(+el.value).toFixed(2)}}
+function bindSlider(id,fn,fmt=v=>v.toFixed(2)){const el=$(id),o=$('o-'+id);el.oninput=()=>{fn(+el.value);o.textContent=fmt(+el.value)}}
+const pct=v=>Math.round(v*100)+'%';
+const ramp=(node,v)=>{if(node)node.gain.setTargetAtTime(v,actx.currentTime,0.02)};
+bindSlider('vMusic',v=>{vol.music=v;ramp(musicGain,v)},pct);
+bindSlider('vBeat',v=>{vol.beat=v;ramp(beatGain,v)},pct);
+bindSlider('vMaster',v=>{vol.master=v;ramp(master,v)},pct);
+bindSlider('vBass',v=>{vol.bass=v;if(eq)eq.gain.setTargetAtTime(v,actx.currentTime,0.02)},v=>'+'+v+'dB');
+bindSlider('bsens',v=>{bsens=v;pickBeats()});
+bindSlider('boff',v=>{boff=v;resyncBeat()},v=>(v>0?'+':'')+v+'ms');
+$('beatOn').onchange=e=>beatOn=e.target.checked;
+$('duck').onchange=e=>duckOn=e.target.checked;
+['punch','808','hard'].forEach(k=>$('k-'+k).onclick=()=>{kickType=k;['punch','808','hard'].forEach(j=>$('k-'+j).setAttribute('aria-pressed',j===k));if(actx){ensureCtx();actx.resume();playKick(actx.currentTime+0.01,0.9)}});
 bindSlider('sens',v=>sens=v);bindSlider('shake',v=>shakeAmt=v);bindSlider('glow',v=>glowAmt=v);
 $('crt').onchange=e=>crt=e.target.checked;
 $('logo').oninput=e=>{logo=e.target.value;buildLogo()};
@@ -297,15 +482,38 @@ function setColors(a,b,rebuild=true){
 }
 $('color').oninput=e=>setColors(e.target.value,c2);
 $('color2').oninput=e=>setColors(c1,e.target.value);
-$('bgFile').onchange=e=>{const f=e.target.files[0];if(!f)return;const im=new Image();im.onload=()=>{bgRaw=im;tintBg()};im.src=URL.createObjectURL(f)};
-$('fsBtn').onclick=()=>{const el=$('stage');(el.requestFullscreen?el.requestFullscreen():Promise.reject()).catch(()=>{})};
+let bgVid=null,bgMode='tint',bgDim=0.9;
+function clearBg(){if(bgVid){bgVid.pause();bgVid.removeAttribute('src');bgVid.load();bgVid=null}bgRaw=null;bgTint=null;$('bgFile').value='';$('bgClear').disabled=true}
+$('bgFile').onchange=e=>{
+  const f=e.target.files[0];if(!f)return;const url=URL.createObjectURL(f);
+  if(f.type.startsWith('video')){
+    clearBg();const v=document.createElement('video');v.muted=true;v.loop=true;v.playsInline=true;v.src=url;
+    v.oncanplay=()=>{bgVid=v;v.play().catch(()=>{})};
+  }else{
+    const im=new Image();im.onload=()=>{if(bgVid)clearBg();bgRaw=im;tintBg()};im.src=url;
+  }
+  $('bgClear').disabled=false;
+};
+$('bgClear').onclick=clearBg;
+['tint','raw'].forEach(k=>$('bgm-'+k).onclick=()=>{bgMode=k;['tint','raw'].forEach(j=>$('bgm-'+j).setAttribute('aria-pressed',j===k));tintBg()});
+bindSlider('bgDim',v=>{bgDim=v;tintBg()},pct);
+const bgFilter=()=>bgMode==='tint'?`grayscale(1) contrast(1.8) brightness(${0.9*bgDim})`:`brightness(${bgDim})`;
+$('fsBtn').onclick=()=>{const el=$('stage');const rq=el.requestFullscreen||el.webkitRequestFullscreen;if(rq)Promise.resolve(rq.call(el)).catch(()=>{})};
+function onFs(){
+  const fs=document.fullscreenElement||document.webkitFullscreenElement;
+  $('fsBtn').hidden=!!fs;
+  setRes(fs?screen.width>screen.height:landUser); // 全画面では画面の向きに合わせる
+}
+document.addEventListener('fullscreenchange',onFs);document.addEventListener('webkitfullscreenchange',onFs);
+$('ar-port').onclick=()=>{landUser=false;setRes(false)};
+$('ar-land').onclick=()=>{landUser=true;setRes(true)};
 
 function tintBg(){
   if(!bgRaw){bgTint=null;return}
   const k=mk(W*1.15|0,H*1.15|0),x=k.getContext('2d');
   const sc=Math.max(k.width/bgRaw.width,k.height/bgRaw.height),w=bgRaw.width*sc,h=bgRaw.height*sc;
-  x.filter='grayscale(1) contrast(1.8) brightness(0.9)';x.drawImage(bgRaw,(k.width-w)/2,(k.height-h)/2,w,h);x.filter='none';
-  x.globalCompositeOperation='multiply';x.fillStyle=c1;x.fillRect(0,0,k.width,k.height);
+  x.filter=bgFilter();x.drawImage(bgRaw,(k.width-w)/2,(k.height-h)/2,w,h);x.filter='none';
+  if(bgMode==='tint'){x.globalCompositeOperation='multiply';x.fillStyle=c1;x.fillRect(0,0,k.width,k.height)}
   bgTint=k;
 }
 
@@ -354,17 +562,46 @@ $('randPre').onclick=()=>{let n;do n=Math.floor(Math.random()*PRESETS.length);wh
 document.addEventListener('keydown',e=>{if(e.target.tagName==='INPUT')return;if(e.key==='ArrowRight')applyPreset(pIdx+1);if(e.key==='ArrowLeft')applyPreset(pIdx-1)});
 
 /* ================= analysis ================= */
-let energy=0,prevE=0,peak=0.3,avgE=0.2,fluxAvg=0.01,norm=0,hiE=0,pulse=0,lastKick=0,kickCount=0;
+let selfMute=0,midE=0,prevM=0,mAvg=0.01,lastM=0,prevH=0,hAvg=0.01,lastH=0,midEnv=0,hiEnv=0,kT=[],sT=[],hT=[],energy=0,prevE=0,peak=0.3,avgE=0.2,fluxAvg=0.01,norm=0,hiE=0,pulse=0,lastKick=0,kickCount=0;
 function band(a,b){const hz=actx.sampleRate/analyser.fftSize;const i0=Math.max(1,Math.floor(a/hz)),i1=Math.ceil(b/hz);let sum=0;for(let i=i0;i<=i1;i++)sum+=freq[i];return sum/((i1-i0+1)*255)}
+let nf=null,micPend=0;
+function denoise(now){ // 帯域ごとのノイズ床を追跡して差し引く（スペクトル減算）
+  const learning=now-liveStart<1500;
+  if(!nf){nf=new Float32Array(freq.length).fill(-1)}
+  for(let i=0;i<freq.length;i++){
+    const v=freq[i];
+    if(nf[i]<0)nf[i]=v;
+    else if(learning)nf[i]=nf[i]*0.85+v*0.15;
+    else if(v<nf[i])nf[i]=nf[i]*0.8+v*0.2;   // 静かになったらすぐ下げる
+    else nf[i]+=(v-nf[i])*0.0015;             // 鳴り続けるノイズにはゆっくり追従
+    const cl=v-nf[i]*1.15-6;freq[i]=cl>0?Math.min(255,cl*1.3):0;
+  }
+  if(learning)return true;
+  if($('status').textContent.includes('学習'))$('status').textContent='マイク入力を解析中（ノイズ除去オン）';
+  return false;
+}
 function analyse(now){
   analyser.getByteFrequencyData(freq);
-  energy=band(30,140);hiE=band(4000,12000);
+  if(mode==='mic'&&live&&denoise(now)){pulse*=0.9;energy=0;return}
+  energy=band(30,140);hiE=band(5000,12000);midE=band(250,2000);
+  const mf=Math.max(0,midE-prevM);prevM=midE;mAvg=mAvg*0.93+mf*0.07;
+  if(mf>Math.max(0.012,mAvg*2.3)&&now-lastM>90){lastM=now;onSnare(now)}
+  const hf=Math.max(0,hiE-prevH);prevH=hiE;hAvg=hAvg*0.93+hf*0.07;
+  if(hf>Math.max(0.008,hAvg*2.3)&&now-lastH>60){lastH=now;onHat(now)}
   peak=Math.max(energy,peak*0.9985,0.12);norm=energy/peak;
   const flux=Math.max(0,energy-prevE);prevE=energy;
   fluxAvg=fluxAvg*0.92+flux*0.08;avgE=avgE*0.96+energy*0.04;
   const byFlux=flux>Math.max(0.018,fluxAvg*(1.9/sens))&&norm>0.55;
   const byLevel=norm>0.86&&energy>avgE*(1.1+0.15/sens);
-  if((byFlux||byLevel)&&now-lastKick>115){lastKick=now;hit(Math.min(1,0.45+norm*0.6));
+  const liveIn=mode==='sys'||mode==='mic';
+  let cand=byFlux||byLevel;
+  if(mode==='mic'){ // 次のフレームでもまだ低音が鳴っていたらキックと確定
+    if(micPend){cand=norm>0.6&&energy>0.06;micPend=0}
+    else if(cand&&energy>0.05){micPend=now;cand=false}
+    else cand=false;
+  }
+  if(cand&&now-lastKick>115&&!(liveIn&&now<selfMute)){lastKick=now;const st=Math.min(1,0.45+norm*0.6);hit(st);
+    if(beatOn&&(live||(mode==='file'&&!beatMap))){playKick(actx.currentTime,st);if(liveIn)selfMute=now+260} // その場でビートを重ねる
     if($('auto').checked&&++kickCount%32===0)applyPreset(pIdx+1)}
   const target=Math.pow(Math.max(0,(norm-0.3)/0.7),1.4)*sens;
   pulse+=(target-pulse)*(target>pulse?0.7:0.16);
@@ -376,6 +613,7 @@ let kickEnv=0,trauma=0,flash=0,split=0,rot=0,rot2=0,curR=225;
 const waves=[],sparks=[];
 function hit(str){
   kickEnv=1;flash=str;split=str*(P.glitch||1);
+  kT.push(performance.now());camKick(str);
   trauma=Math.min(1,trauma+0.55*str);
   waves.push({r:curR,life:1,w:10*str});
   const n=18+(str*22|0);
@@ -394,7 +632,20 @@ const embers=Array.from({length:80},()=>({x:Math.random()*W,y:Math.random()*H,r:
 const stars=Array.from({length:260},()=>({x:rnd(-1,1),y:rnd(-1,1),z:rnd(.05,1),tw:Math.random()*6}));
 const grain=mk(256,256);{const g=grain.getContext('2d'),id=g.createImageData(256,256);for(let i=0;i<id.data.length;i+=4){const v=Math.random()*255;id.data[i]=id.data[i+1]=id.data[i+2]=v;id.data[i+3]=255}g.putImageData(id,0,0)}
 const scan=mk(4,4);{const g=scan.getContext('2d');g.fillStyle='rgba(0,0,0,0.28)';g.fillRect(0,0,4,1)}
-const vig=mk(W,H);{const g=vig.getContext('2d'),v=g.createRadialGradient(CX,H/2,H*0.22,CX,H/2,H*0.72);v.addColorStop(0,'rgba(0,0,0,0)');v.addColorStop(1,'rgba(0,0,0,0.82)');g.fillStyle=v;g.fillRect(0,0,W,H)}
+let vig;function buildVig(){vig=mk(W,H);const g=vig.getContext('2d'),R0=Math.max(W,H),v=g.createRadialGradient(CX,H/2,R0*0.22,CX,H/2,R0*0.72);v.addColorStop(0,'rgba(0,0,0,0)');v.addColorStop(1,'rgba(0,0,0,0.82)');g.fillStyle=v;g.fillRect(0,0,W,H)}buildVig();
+let landUser=false;
+function setRes(land){
+  const w=land?1280:720,hh=land?720:1280;
+  $('ar-port').setAttribute('aria-pressed',!land);$('ar-land').setAttribute('aria-pressed',land);
+  $('stage').classList.toggle('land',land&&!document.fullscreenElement);
+  if(w===W&&hh===H)return;
+  W=w;H=hh;CX=w/2;CY=land?hh*0.5:600;U=land?0.74:1;
+  for(const k of[cv,scene,ringL,prev,tmp]){k.width=w;k.height=hh}
+  bl1.width=w/4;bl1.height=hh/4;bl2.width=Math.round(w/12);bl2.height=Math.round(hh/12);
+  buildVig();tintBg();scanPat=grainPat=null;tunnelRings=[];
+  for(const q of streaks)q.x=Math.random()*W*1.4;
+  for(const q of[...dust,...snow,...embers,...blobs]){q.x=Math.random()*W;q.y=Math.random()*H}
+}
 let grainPat=null,scanPat=null;
 
 /* ---------- logo cache ---------- */
@@ -425,7 +676,7 @@ function bgFog(now,p){
 }
 let gridOff=0;
 function bgGrid(now,p){
-  const hz=CY+300;gridOff=(gridOff+0.006*(1+p*3+kickEnv*4))%1;
+  const hz=CY+300*U;gridOff=(gridOff+0.006*(1+p*3+kickEnv*4))%1;
   const sky=s.createLinearGradient(0,0,0,hz);sky.addColorStop(0,'rgba(0,0,0,0)');sky.addColorStop(1,col2(0.28+p*0.2));
   s.fillStyle=sky;s.fillRect(-80,-80,W+160,hz+80);
   s.save();s.beginPath();s.rect(-80,hz,W+160,H);s.clip();
@@ -476,7 +727,13 @@ function bgAurora(now,p){
 }
 function drawBg(now,p){
   s.fillStyle='#030006';s.fillRect(-80,-80,W+160,H+160);
-  if(bgTint){const z=1+p*0.03+kickEnv*0.035,w=bgTint.width*z,h=bgTint.height*z;s.drawImage(bgTint,CX-w/2,H/2-h/2,w,h)}
+  if(bgVid&&bgVid.videoWidth){
+    const z=(1.15+p*0.03+kickEnv*0.035)*Math.max(W/bgVid.videoWidth,H/bgVid.videoHeight),w=bgVid.videoWidth*z,h=bgVid.videoHeight*z;
+    s.save();s.filter=bgFilter();s.drawImage(bgVid,CX-w/2,H/2-h/2,w,h);s.filter='none';
+    if(bgMode==='tint'){s.globalCompositeOperation='multiply';s.fillStyle=c1;s.fillRect(-80,-80,W+160,H+160)}
+    s.restore();
+  }
+  else if(bgTint){const z=1+p*0.03+kickEnv*0.035,w=bgTint.width*z,h=bgTint.height*z;s.drawImage(bgTint,CX-w/2,H/2-h/2,w,h)}
   else{
     if(P.bg==='grid'){bgFog(now,p*0.4);bgGrid(now,p)}
     else if(P.bg==='stars'){bgFog(now,p*0.3);bgStars(now,p,false)}
@@ -619,9 +876,9 @@ function ornament(x,R,p,now){
 }
 
 function drawEmblem(now,p){
-  const R=curR=225*(1+p*0.14+kickEnv*0.07);
+  const R=225*(1+p*0.14+kickEnv*0.07);curR=R*U;
   rot+=0.003+kickEnv*0.03+p*0.004;rot2-=0.005+kickEnv*0.02;
-  const x=r;x.clearRect(0,0,W,H);x.save();x.translate(CX,CY);
+  const x=r;x.clearRect(0,0,W,H);x.save();x.translate(CX,CY);x.scale(U,U);
   const sp=P.spec;
 
   if(sp==='bars'&&freq){
@@ -692,7 +949,7 @@ function drawEmblem(now,p){
 }
 
 function drawReflection(){
-  const floor=CY+curR*1.08+60;
+  const floor=CY+curR*1.08+60*U;
   t.globalCompositeOperation='source-over';t.clearRect(0,0,W,H);
   t.save();t.translate(0,floor);t.scale(1,-0.55);t.translate(0,-floor);t.drawImage(ringL,0,0);t.restore();
   t.globalCompositeOperation='destination-in';
@@ -719,8 +976,8 @@ function curTime(){
   return 0;
 }
 function drawTime(p){
-  const y=CY+(P.refl?380:340);
-  s.save();s.textAlign='center';s.textBaseline='middle';s.font='700 60px "Orbitron", monospace';
+  const y=CY+(P.refl?380:340)*U;
+  s.save();s.textAlign='center';s.textBaseline='middle';s.font=`700 ${60*U|0}px "Orbitron", monospace`;
   s.shadowColor=col(1,0.2);s.shadowBlur=18+p*26*glowAmt;s.fillStyle='#f8eeff';s.fillText(fmt(curTime()),CX,y);
   if(mode==='file'&&audio.duration){const w=220,f=audio.currentTime/audio.duration;s.shadowBlur=10;s.fillStyle=col(0.25);s.fillRect(CX-w/2,y+50,w,3);s.fillStyle=col2(1,0.4);s.fillRect(CX-w/2,y+50,w*f,3)}
   s.restore();
@@ -728,7 +985,47 @@ function drawTime(p){
 
 /* ================= compose ================= */
 const nz=(x,a,b)=>Math.sin(x*a)*0.6+Math.sin(x*b+1.7)*0.4;
-let last=performance.now(),cycleF=0;
+/* ================= auto camera ================= */
+const SHOTS=[ // x,y = 注目する位置（中心からのずれ）, z = ズーム, r = 傾き
+  {x:0,y:0,z:1,r:0,n:'ワイド'},{x:0,y:0,z:1.32,r:0,n:'寄り'},{x:0,y:-150,z:1.45,r:0,n:'上の飾り'},
+  {x:0,y:110,z:1.22,r:-0.04,n:'下から'},{x:-110,y:-40,z:1.4,r:0.06,n:'左寄り'},{x:110,y:-40,z:1.4,r:-0.06,n:'右寄り'},
+  {x:0,y:0,z:1.7,r:0,n:'ロゴ寄り'},{x:0,y:0,z:0.9,r:0,n:'引き'},{x:-60,y:60,z:1.15,r:0.03,n:'斜め'},{x:70,y:-90,z:1.25,r:-0.03,n:'斜め上'}];
+let camOn=true,camStyle='auto',inten=0.25,shotT=0,shotIdx=0,snSign=1;
+const cam={x:0,y:0,z:1,r:0,vx:0,vy:0,vz:0,vr:0,tx:0,ty:0,tz:1,tr:0,jx:0,jy:0,ky:0,ri:0,zi:0};
+const lerp=(a,b,k)=>a+(b-a)*k;
+const camI=()=>camStyle==='smooth'?0.1:camStyle==='hard'?0.95:inten;
+function nextShot(now,cut){
+  let i;do i=Math.floor(Math.random()*SHOTS.length);while(i===shotIdx);shotIdx=i;
+  const S=SHOTS[i];cam.tx=S.x*U;cam.ty=S.y*U;cam.tz=S.z;cam.tr=S.r;shotT=now;
+  if(cut){cam.x=cam.tx;cam.y=cam.ty;cam.z=cam.tz;cam.r=cam.tr;cam.vx=cam.vy=cam.vz=cam.vr=0}
+}
+function camKick(str){if(!camOn)return;const it=camI();cam.zi+=0.05*str*(0.3+it);cam.ky+=12*U*str*it}
+function onSnare(now){sT.push(now);midEnv=1;if(!camOn)return;const it=camI();snSign=-snSign;cam.ri+=snSign*0.035*it*it;cam.jx+=snSign*16*U*it*it}
+function onHat(now){hT.push(now);hiEnv=1;if(!camOn)return;const it=camI();cam.jx+=(Math.random()-.5)*7*U*it*it;cam.jy+=(Math.random()-.5)*7*U*it*it;cam.zi+=0.006*it*it}
+function updateCamera(now,dt,playing){
+  const cut=now-4000;
+  while(kT.length&&kT[0]<cut)kT.shift();while(sT.length&&sT[0]<cut)sT.shift();while(hT.length&&hT[0]<cut)hT.shift();
+  const tgt=playing?Math.min(1,0.45*Math.min(1,kT.length/4/2.2)+0.35*Math.min(1,hT.length/4/7)+0.2*Math.min(1,sT.length/4/2)):0.15;
+  inten+=(tgt-inten)*0.012*dt;
+  const it=camI();
+  if(!camOn){cam.tx=cam.ty=0;cam.tz=1;cam.tr=0}
+  else{
+    const hold=lerp(7500,1300,it);
+    if(now-shotT>hold&&(it<0.45||kickEnv>0.9))nextShot(now,it>0.7&&Math.random()<0.35);
+  }
+  const w=lerp(1.0,7.5,it),sdt=dt/60/2;
+  for(let k=0;k<2;k++){
+    cam.vx+=(w*w*(cam.tx-cam.x)-2*w*cam.vx)*sdt;cam.x+=cam.vx*sdt;
+    cam.vy+=(w*w*(cam.ty-cam.y)-2*w*cam.vy)*sdt;cam.y+=cam.vy*sdt;
+    cam.vz+=(w*w*(cam.tz-cam.z)-2*w*cam.vz)*sdt;cam.z+=cam.vz*sdt;
+    cam.vr+=(w*w*(cam.tr-cam.r)-2*w*cam.vr)*sdt;cam.r+=cam.vr*sdt;
+  }
+  cam.zi*=Math.pow(0.84,dt);cam.ky*=Math.pow(0.8,dt);cam.ri*=Math.pow(0.88,dt);cam.jx*=Math.pow(0.7,dt);cam.jy*=Math.pow(0.7,dt);
+  midEnv*=Math.pow(0.82,dt);hiEnv*=Math.pow(0.75,dt);
+}
+$('camOn').onchange=e=>camOn=e.target.checked;
+['auto','smooth','hard'].forEach(k=>$('cs-'+k).onclick=()=>{camStyle=k;['auto','smooth','hard'].forEach(j=>$('cs-'+j).setAttribute('aria-pressed',j===k))});
+let last=performance.now(),cycleF=0,stripF=0;
 function frame(now){
   const dt=Math.min(3,(now-last)/16.67);last=now;
   const playing=analyser&&((mode==='file'&&!audio.paused)||(mode==='demo'&&demoOn)||live);
@@ -736,15 +1033,18 @@ function frame(now){
   if(P.cycle){const h=(now/40)%360;c1=hsl2hex(h,95,62);c2=hsl2hex((h+150)%360,95,65);RGB1=rgb(c1);RGB2=rgb(c2);if(++cycleF%8===0)buildLogo()}
 
   kickEnv*=Math.pow(0.86,dt);flash*=Math.pow(0.8,dt);split*=Math.pow(0.84,dt);trauma=Math.max(0,trauma-0.03*dt);
-  const sh=trauma*trauma*shakeAmt;
-  const ox=70*sh*nz(now,0.047,0.131),oy=70*sh*nz(now+400,0.053,0.117);
-  const ang=0.06*sh*nz(now+900,0.039,0.097)+Math.sin(now/1700)*0.004*pulse;
-  const zoom=1.05+pulse*0.03*shakeAmt+kickEnv*0.06*Math.min(1,shakeAmt);
+  updateCamera(now,dt,playing);
+  const it=camI(),calm=camOn?1-it:0;
+  const sh=trauma*trauma*shakeAmt*(0.55+0.45*it);
+  const ox=70*U*sh*nz(now,0.047,0.131)+cam.jx+Math.sin(now/3700)*22*U*calm;
+  const oy=70*U*sh*nz(now+400,0.053,0.117)+cam.jy+cam.ky+Math.sin(now/4300+1)*16*U*calm;
+  const ang=0.06*sh*nz(now+900,0.039,0.097)+Math.sin(now/1700)*0.004*pulse+cam.r+cam.ri+Math.sin(now/5100)*0.012*calm;
+  const zoom=(1.05+pulse*0.03*shakeAmt+kickEnv*0.06*Math.min(1,shakeAmt))*cam.z*(1+cam.zi);
 
   drawEmblem(now,pulse);
 
   s.save();
-  s.translate(CX+ox,CY+oy);s.rotate(ang);s.scale(zoom,zoom);s.translate(-CX,-CY);
+  s.translate(CX+ox,CY+oy);s.rotate(ang);s.scale(zoom,zoom);s.translate(-CX-cam.x,-CY-cam.y);
   drawBg(now,pulse);
   if(P.trail){ // zooming ghost trail
     s.save();s.globalCompositeOperation='screen';s.globalAlpha=Math.min(1,P.trail*(0.6+kickEnv*0.5));
@@ -778,7 +1078,7 @@ function frame(now){
   }else c.drawImage(scene,0,0);
 
   if(glowAmt>0){
-    b1.clearRect(0,0,180,320);b1.drawImage(scene,0,0,180,320);b2.clearRect(0,0,60,107);b2.drawImage(bl1,0,0,60,107);
+    b1.clearRect(0,0,bl1.width,bl1.height);b1.drawImage(scene,0,0,bl1.width,bl1.height);b2.clearRect(0,0,bl2.width,bl2.height);b2.drawImage(bl1,0,0,bl2.width,bl2.height);
     c.globalCompositeOperation='lighter';
     c.globalAlpha=(0.22+pulse*0.25+kickEnv*0.2)*glowAmt;c.drawImage(bl1,0,0,W,H);
     c.globalAlpha=(0.3+pulse*0.3+kickEnv*0.3)*glowAmt;c.drawImage(bl2,0,0,W,H);
@@ -794,6 +1094,10 @@ function frame(now){
 
   $('meter').style.width=Math.min(100,(playing?norm:0)*100)+'%';
   $('kickDot').style.background=kickEnv>0.5?c1:'';
+  if(++stripF%3===0){drawStrip();
+    $('midDot').style.background=midEnv>0.4?c2:'';$('hiDot').style.background=hiEnv>0.4?c2:'';
+    $('intMeter').style.width=Math.round(camI()*100)+'%';
+    $('camInfo').textContent=!camOn?'オフ':`${it<0.35?'なめらか':it<0.7?'標準':'激しい'} ・ ${SHOTS[shotIdx].n}`;}
   requestAnimationFrame(frame);
 }
 
