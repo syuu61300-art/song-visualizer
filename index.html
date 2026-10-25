@@ -35,7 +35,7 @@ h1{font-family:var(--mono);font-size:15px;letter-spacing:.16em;margin:0;text-tra
 .seg3 button{padding:8px 4px;font-size:12px}
 .strip{width:100%;height:40px;display:block;border-radius:8px;background:var(--well);border:1px solid var(--line)}
 .seg button[aria-pressed="true"],.seg3 button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#14041f}
-.presets{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}
+.presets{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;max-height:330px;overflow-y:auto;padding:2px 4px 2px 2px;scrollbar-width:thin}
 .pre{padding:4px 2px 5px;display:flex;flex-direction:column;align-items:center;gap:3px;font-weight:400;font-size:9.5px;line-height:1.2;border-radius:8px;background:var(--well);min-width:0}
 .pre canvas{width:100%;max-width:52px;aspect-ratio:1;display:block}
 .pre span{font-family:var(--mono);font-size:9px;color:var(--muted)}
@@ -97,6 +97,7 @@ video{width:100%;border-radius:8px}
           <input id="audioFile" type="file" accept="audio/*">
         </div>
         <div class="row" style="margin-top:8px"><button id="playBtn" class="primary" disabled>再生</button></div>
+        <div class="sl" style="margin-top:8px"><label for="seek">位置</label><input id="seek" type="range" min="0" max="1" step="0.01" value="0" disabled><output id="o-seek">0:00</output></div>
       </div>
       <div id="p-sys" hidden>
         <p class="hint">YouTubeやSpotifyなど、PCで流れている音に反応します。共有画面の選択で<b>「タブ」または「画面全体」</b>を選び、<b>「音声を共有」</b>をオンにしてください。PC版のChrome / Edgeで、このHTMLファイルを直接開いたときに使えます。</p>
@@ -104,7 +105,8 @@ video{width:100%;border-radius:8px}
       </div>
       <div id="p-mic" hidden>
         <p class="hint">スピーカーの音をマイクで拾って反応します。最初の1.5秒で周囲のノイズを学習し、以後も自動で差し引くので、エアコンや話し声には反応しにくくなります（確認のため、反応がほんの少し遅れます）。</p>
-        <div class="row" style="margin-top:8px"><button id="micBtn" class="primary">マイクを開始</button></div>
+        <div class="sl" style="margin-top:8px"><label for="mgate">ノイズゲート</label><input id="mgate" type="range" min="0" max="1" step="0.05" value="0.5"><output id="o-mgate">0.50</output></div>
+        <div class="row" style="margin-top:8px"><button id="micBtn" class="primary">マイクを開始</button><button id="relearn" type="button">ノイズを学習し直す</button></div>
       </div>
       <div id="p-demo" hidden>
         <p class="hint">その場で合成した128BPMのビートを鳴らします。</p>
@@ -123,9 +125,10 @@ video{width:100%;border-radius:8px}
       </div>
       <div class="sl"><label for="bsens">検出の感度</label><input id="bsens" type="range" min="0.5" max="2" step="0.05" value="1"><output id="o-bsens">1.00</output></div>
       <div class="sl"><label for="boff">タイミング</label><input id="boff" type="range" min="-80" max="80" step="5" value="0"><output id="o-boff">0ms</output></div>
+      <label class="check"><input id="autoStr" type="checkbox" checked> 曲に合わせて強さを自動調整 <span class="status" id="autoInfo"></span></label>
       <label class="check"><input id="duck" type="checkbox" checked> サイドチェイン（キックの瞬間だけ曲を下げる）</label>
       <canvas id="strip" class="strip" width="640" height="80" aria-label="検出したキックの位置"></canvas>
-      <p class="hint">音楽ファイルは再生前に曲全体を解析し、キックの位置ぴったりにビートを重ねます。端末の音とマイクでは、聞こえた瞬間に重ねます（ほんの少し遅れます）。</p>
+      <p class="hint">音楽ファイルは曲全体を解析してキックの立ち上がりを1ms単位で求め、曲と同じ時計で予約して鳴らします（録画にもずれなく入ります）。端末の音とマイクは「聞こえてから鳴らす」しかないため、0.05〜0.15秒ほど遅れます。撮影には音楽ファイルを使ってください。</p>
     </div>
 
     <div class="group">
@@ -170,6 +173,7 @@ video{width:100%;border-radius:8px}
         <button id="cs-smooth" aria-pressed="false">なめらか</button>
         <button id="cs-hard" aria-pressed="false">激しい</button>
       </div>
+      <div class="sl"><label for="zoomAmt">ズーム量</label><input id="zoomAmt" type="range" min="0" max="1" step="0.05" value="0.35"><output id="o-zoomAmt">35%</output></div>
       <p class="hint">「自動」では曲の勢いを測って動きを変えます。静かな曲ではゆっくり滑らかに、激しい曲ではキック＝ズーム、スネア＝傾き、ハイハット＝細かい揺れと、音ごとに別々の動きをします。</p>
     </div>
 
@@ -240,6 +244,28 @@ const PRESETS=[
  {name:'ギャラクシー',    c1:'#6a7dff',c2:'#ff6ad5',shape:{t:'star',n:5,d:.3},   orn:'rays',    bg:'stars', fx:'warp',   spec:'wave',font:'audiowide'},
  {name:'グリッチレッド',  c1:'#ff0a3c',c2:'#00f0ff',shape:{t:'poly',n:4,flat:1}, orn:'brackets',bg:'grid',  fx:'streaks',spec:'bars',font:'glitch',glitch:1.6},
 ];
+/* ---------- 追加プリセット: 色・形・飾り・背景の組み合わせを自動生成（毎回同じ並び） ---------- */
+{
+  const PALS=[['シアン','#00e5ff','#ff2bd6'],['バイオレット','#9b5bff','#3de2ff'],['マゼンタ','#ff3dbb','#7b5bff'],['クリムゾン','#ff2348','#ffb13d'],
+    ['アンバー','#ffae2b','#ff3d6e'],['ライム','#b6ff3d','#3dffd0'],['ミント','#3dffc2','#3d9bff'],['スカイ','#4fc3ff','#ffffff'],
+    ['コバルト','#2f5bff','#ff4fd8'],['ルビー','#ff1f5a','#ff8ad8'],['サクラ','#ffa6d6','#fff0f8'],['オーロラ','#3dffa8','#b45bff'],
+    ['ネオンオレンジ','#ff6a1f','#ffe23d'],['アイス','#b8e6ff','#7fb0ff'],['ラベンダー','#c6a6ff','#ffb8f0'],['エメラルド','#1fff8a','#e0ff3d'],
+    ['プラズマ','#ff2bf2','#2bf2ff'],['ブレイズ','#ff3d1f','#ffd23d'],['ディープシー','#1f8aff','#3dffe0'],['モノクロ','#f2f2f7','#8a8aa0'],
+    ['ゴールド','#ffcf3d','#ffffff'],['トワイライト','#ff7a5b','#7b5bff']];
+  const SH=[[{t:'circle'},'サークル'],[{t:'poly',n:3},'トライ'],[{t:'poly',n:3,flip:1},'逆トライ'],[{t:'poly',n:4},'ダイヤ'],[{t:'poly',n:4,flat:1},'スクエア'],
+    [{t:'poly',n:5},'ペンタ'],[{t:'poly',n:6},'ヘキサ'],[{t:'poly',n:8},'オクタ'],[{t:'star',n:4,d:.3},'4つ星'],[{t:'star',n:5,d:.3},'スター'],
+    [{t:'star',n:8,d:.14},'8つ星'],[{t:'flower',n:6},'フラワー'],[{t:'flower',n:10},'デイジー'],[{t:'gear',n:10},'ギア'],[{t:'gear',n:16},'ギア16']];
+  const OR=[['spikesIn','内トゲ'],['spikesOut','外トゲ'],['horns','ツノ'],['crown','王冠'],['wings','翼'],['rays','放射'],['orbit','軌道'],['brackets','フレーム'],['none','シンプル']];
+  const BG=['fog','grid','stars','tunnel','aurora'],FX=['streaks','snow','embers','warp'],SPC=['bars','dots','wave','none'],FN=['glitch','audiowide','monoton','marker'];
+  let seed=20261025;const rnd=()=>{seed=(seed+0x6D2B79F5)|0;let t=Math.imul(seed^(seed>>>15),1|seed);t=(t+Math.imul(t^(t>>>7),61|t))^t;return((t^(t>>>14))>>>0)/4294967296};
+  const pick=a=>a[Math.floor(rnd()*a.length)],seen=new Set(PRESETS.map(p=>p.name));
+  for(let k=0;PRESETS.length<120;k++){
+    const pal=PALS[k%PALS.length],sh=pick(SH),or=pick(OR),name=`${pal[0]} ${sh[1]}・${or[1]}`;
+    if(seen.has(name))continue;seen.add(name);
+    PRESETS.push({name,c1:pal[1],c2:pal[2],shape:sh[0],orn:or[0],bg:pick(BG),fx:pick(FX),spec:pick(SPC),font:pick(FN),
+      trail:rnd()<0.3?0.3+rnd()*0.25:0,refl:rnd()<0.25?1:0,glitch:rnd()<0.15?1.5:0,cycle:k%37===36?1:0});
+  }
+}
 const FONTS={glitch:'"Rubik Glitch", Impact, sans-serif',audiowide:'"Audiowide", "Orbitron", sans-serif',monoton:'"Monoton", "Audiowide", sans-serif',marker:'"Permanent Marker", "Comic Sans MS", cursive'};
 let P=PRESETS[0],pIdx=0;
 let c1='#b44dff',c2='#ff4fd8',sens=1,shakeAmt=1.2,glowAmt=0.8,crt=true,logo='RENTHANY',bgTint=null,bgRaw=null;
@@ -291,13 +317,12 @@ function ensureCtx(){
   master=actx.createGain();master.gain.value=vol.master;master.connect(actx.destination);
   try{recDest=actx.createMediaStreamDestination();master.connect(recDest)}catch(e){}
   mixBus=actx.createGain();mixBus.connect(master);
-  mediaSrc=actx.createMediaElementSource(audio);
   eq=actx.createBiquadFilter();eq.type='lowshelf';eq.frequency.value=90;eq.gain.value=vol.bass;
   musicGain=actx.createGain();musicGain.gain.value=vol.music;
   duckG=actx.createGain();
-  mediaSrc.connect(eq);eq.connect(musicGain);musicGain.connect(duckG);duckG.connect(mixBus);eq.connect(bus);
+  eq.connect(musicGain);musicGain.connect(duckG);duckG.connect(mixBus);eq.connect(bus);
   demoGain=actx.createGain();demoGain.gain.value=0.9;demoGain.connect(bus);demoGain.connect(mixBus);
-  beatGain=actx.createGain();beatGain.gain.value=vol.beat;beatGain.connect(mixBus);
+  beatGain=actx.createGain();beatGain.gain.value=beatLevel();beatGain.connect(mixBus);
   beatToBus=actx.createGain();beatGain.connect(beatToBus);beatToBus.connect(bus);
   for(const k in KICKS)curves[k]=driveCurve(KICKS[k].drive);
   routeBeat();
@@ -311,21 +336,22 @@ const KICKS={
   '808':{wave:'sine',    f0:120,f1:40,sweep:0.06,amp:0.95,decay:1.0, click:0.12,drive:3},
   hard: {wave:'triangle',f0:270,f1:55,sweep:0.05,amp:0.9, decay:0.26,click:0.5, drive:18},
 };
+const KICK_LEAD=0.0012; // 合成キックが聞こえ始めるまでの遅れ（実測）を先取り
 let kickType='punch',beatOn=true,duckOn=true,bsens=1,boff=0;
 function driveCurve(k){const n=1024,cu=new Float32Array(n);for(let i=0;i<n;i++){const x=i/(n-1)*2-1;cu[i]=(1+k)*x/(1+k*Math.abs(x))}return cu}
-function playKick(when,str){
-  if(!actx)return;
+function playKick(when,str,dest){
+  if(!actx)return;dest=dest||beatGain;
   const T=KICKS[kickType],v=(0.55+0.45*str)*T.amp;
   const o=actx.createOscillator(),ws=actx.createWaveShaper(),g=actx.createGain();
   ws.curve=curves[kickType];ws.oversample='2x';o.type=T.wave;
   o.frequency.setValueAtTime(T.f0,when);o.frequency.exponentialRampToValueAtTime(T.f1,when+T.sweep);
-  g.gain.setValueAtTime(0.0001,when);g.gain.exponentialRampToValueAtTime(v,when+0.004);g.gain.exponentialRampToValueAtTime(0.0001,when+T.decay);
-  o.connect(ws);ws.connect(g);g.connect(beatGain);o.start(when);o.stop(when+T.decay+0.05);
+  g.gain.setValueAtTime(0,when);g.gain.linearRampToValueAtTime(v,when+0.0015);g.gain.exponentialRampToValueAtTime(0.0001,when+T.decay); // 立ち上がり1.5msで鋭く
+  o.connect(ws);ws.connect(g);g.connect(dest);o.start(when);o.stop(when+T.decay+0.05);
   if(T.click){
     const sr=actx.createBufferSource(),hp=actx.createBiquadFilter(),cg=actx.createGain();
     sr.buffer=getNoise();hp.type='highpass';hp.frequency.value=2500;
     cg.gain.setValueAtTime(T.click*v,when);cg.gain.exponentialRampToValueAtTime(0.0001,when+0.018);
-    sr.connect(hp);hp.connect(cg);cg.connect(beatGain);sr.start(when);sr.stop(when+0.03);
+    sr.connect(hp);hp.connect(cg);cg.connect(dest);sr.start(when);sr.stop(when+0.03);
   }
   if(duckOn&&mode==='file'){
     const d=duckG.gain;d.cancelScheduledValues(when);d.setValueAtTime(0.4,when);d.setTargetAtTime(1,when+0.03,0.09);
@@ -333,26 +359,51 @@ function playKick(when,str){
 }
 
 /* ================= offline beat map for files ================= */
-const HOP=0.01;
-let beatEnv=null,beatFlux=null,beatDur=0,beatMap=null,beatBpm=0,kIdx=0,beatJob=0;
+const HOP=0.01,LP_DELAY=0.0035; // 解析用ローパス2段の遅れを補正
+let beatEnv=null,beatFlux=null,beatSig=null,beatSR=44100,beatDur=0,beatMap=null,beatBpm=0,kIdx=0,beatJob=0;
+let songBuf=null,autoK=1,autoOn=true;
+function beatLevel(){return vol.beat*(autoOn&&mode==='file'&&songBuf?autoK:1)}
+function applyBeatLevel(){if(beatGain)beatGain.gain.setTargetAtTime(beatLevel(),actx.currentTime,0.02)}
 async function analyzeFile(f){
-  const job=++beatJob;beatMap=null;beatEnv=null;$('beatInfo').textContent='曲を解析中…';
+  const job=++beatJob;beatMap=null;beatEnv=null;songBuf=null;
+  $('beatInfo').textContent='曲を解析中…';$('playBtn').disabled=true;$('seek').disabled=true;
   try{
     const ab=await f.arrayBuffer();
-    const OAC=window.OfflineAudioContext||window.webkitOfflineAudioContext;
-    const buf=await new OAC(1,1,44100).decodeAudioData(ab);
+    ensureCtx();
+    const buf=await actx.decodeAudioData(ab);
     if(job!==beatJob)return;
-    const sr=buf.sampleRate,off=new OAC(1,buf.length,sr);
+    const sr=buf.sampleRate,OAC=window.OfflineAudioContext||window.webkitOfflineAudioContext,off=new OAC(1,buf.length,sr);
     const src=off.createBufferSource();src.buffer=buf;
     const l1=off.createBiquadFilter(),l2=off.createBiquadFilter();l1.type=l2.type='lowpass';l1.frequency.value=l2.frequency.value=130;
     src.connect(l1);l1.connect(l2);l2.connect(off.destination);src.start();
     const out=(await off.startRendering()).getChannelData(0);
     if(job!==beatJob)return;
-    const hop=Math.round(sr*HOP),n=Math.floor(out.length/hop),env=new Float32Array(n);
-    for(let i=0;i<n;i++){let q=0;const o=i*hop;for(let j=0;j<hop;j++){const v=out[o+j];q+=v*v}env[i]=Math.sqrt(q/hop)}
+    const hop=Math.round(sr*HOP),n=Math.floor(out.length/hop),env=new Float32Array(n),full=new Float32Array(n),mono=new Float32Array(out.length);
+    const chs=[...Array(buf.numberOfChannels)].map((_,i)=>buf.getChannelData(i)),nc=chs.length;
+    for(let i=0;i<n;i++){let q=0,qf=0;const o=i*hop;for(let j=0;j<hop;j++){const v=out[o+j];q+=v*v;let m=0;for(let c=0;c<nc;c++)m+=chs[c][o+j];m/=nc;mono[o+j]=m;qf+=m*m}env[i]=Math.sqrt(q/hop);full[i]=Math.sqrt(qf/hop)}
     const flux=new Float32Array(n);for(let i=1;i<n;i++)flux[i]=Math.max(0,env[i]-env[i-1]);
-    beatEnv=env;beatFlux=flux;beatDur=buf.duration;pickBeats();
-  }catch(e){if(job===beatJob)$('beatInfo').textContent='解析できませんでした（その場の検出で重ねます）'}
+    // 自動の強さ: 曲そのものの低音が強いほど追加ビートを控えめにする
+    const p95=a=>{const s=Float32Array.from(a).sort();return s[Math.floor(s.length*0.95)]||1e-6};
+    const ratio=Math.min(1,p95(env)/p95(full));
+    autoK=Math.max(0.3,Math.min(1.8,0.42/Math.max(0.05,ratio)));
+    $('autoInfo').textContent=`低音 ${Math.round(ratio*100)}% → ×${autoK.toFixed(2)}`;
+    beatEnv=env;beatFlux=flux;beatSig=mono;beatSR=sr;beatDur=buf.duration;songBuf=buf;
+    pickBeats();applyBeatLevel();
+    songPos=0;$('seek').max=buf.duration.toFixed(2);$('seek').disabled=false;$('playBtn').disabled=false;
+  }catch(e){if(job===beatJob){$('beatInfo').textContent='この形式は読み込めませんでした';}}
+}
+function refineOnset(i){ // 10ms単位の候補から、実際の立ち上がりをサンプル単位で探す（全帯域の波形で、アタックの瞬間を拾う）
+  const x=beatSig,sr=beatSR,hop=Math.round(sr*HOP),win=Math.max(1,Math.round(sr*0.001));
+  const a=Math.max(win,(i-9)*hop),b=Math.min(x.length,(i+3)*hop),c=Math.max(a+1,(i-4)*hop);
+  const e=new Float32Array(b-a); // 1ms 窓のピーク包絡線
+  for(let j=a;j<b;j++){let m=0;for(let q=j-win;q<j;q++){const v=x[q]<0?-x[q]:x[q];if(v>m)m=v}e[j-a]=m}
+  const pre=e.slice(0,c-a-Math.round(sr*0.005)).sort(),base=pre.length?pre[pre.length>>1]:0; // 直前に鳴っていた音
+  let A=0;for(let j=c-a;j<e.length;j++)if(e[j]>A)A=e[j];
+  if(A<=base*1.05)return Math.max(0,i*HOP-0.005);
+  const th=base+(A-base)*0.3;
+  let j=c-a;while(j<e.length&&e[j]<th)j++;                 // しきい値を最初に超えた点
+  while(j>0&&e[j-1]>base+(A-base)*0.08&&e[j-1]<e[j])j--;  // 立ち上がりの根元まで戻る
+  return Math.max(0,(a+j-win)/sr);
 }
 function pickBeats(){
   const env=beatEnv,flux=beatFlux;if(!env)return;
@@ -368,7 +419,10 @@ function pickBeats(){
     if(!isMax)continue;
     let pk=0;for(let j=i;j<i+6;j++)pk=Math.max(pk,env[j]);
     const st=Math.min(1,pk/p95);if(st<minStr)continue;
-    const tt=Math.max(0,i*HOP-0.005);if(tt-lastT<0.12)continue;
+    // キックは鋭く減衰する。伸び続けるベース音は除外
+    let pi=i;for(let j=i;j<i+6;j++)if(env[j]>=pk)pi=j;
+    const tail=env[Math.min(n-1,pi+12)]/pk;if(tail>0.62+0.1*(bsens-1))continue;
+    const tt=refineOnset(i);if(tt-lastT<0.12)continue;
     res.push({t:tt,s:st});lastT=tt;
   }
   const hist={};
@@ -376,19 +430,46 @@ function pickBeats(){
   let best=0,bc=0;for(const b in hist){const sc=hist[b]+(hist[+b-1]||0)*0.5+(hist[+b+1]||0)*0.5;if(sc>bc){bc=sc;best=+b}}
   beatMap=res;beatBpm=best;
   $('beatInfo').textContent=`${res.length} キック${best?` ・ 約 ${best} BPM`:''}`;
-  resyncBeat();
+  if(songPlaying)playSong(songTime()); // 感度を変えたら予約し直す
 }
-function resyncBeat(){if(!beatMap)return;const ct=audio.currentTime;let lo=0,hi=beatMap.length;while(lo<hi){const m=(lo+hi)>>1;beatMap[m].t<ct?lo=m+1:hi=m}kIdx=lo}
-audio.addEventListener('seeked',resyncBeat);audio.addEventListener('play',resyncBeat);
-setInterval(()=>{ // 先読みしてキック位置にぴったり予約する
-  if(!actx||mode!=='file'||audio.paused||!beatOn||!beatMap)return;
-  const ct=audio.currentTime,rate=audio.playbackRate||1,now=actx.currentTime,off=boff/1000;
-  while(kIdx<beatMap.length&&beatMap[kIdx].t+off<ct-0.015)kIdx++;
-  while(kIdx<beatMap.length&&beatMap[kIdx].t+off<ct+0.1){const k=beatMap[kIdx++];playKick(Math.max(now,now+(k.t+off-ct)/rate),k.s)}
-},20);
 
+/* ---------- song transport: 曲とビートを同じ AudioContext の時計で鳴らす ---------- */
+let songSrc=null,songStart=0,songPos=0,songPlaying=false,kickBus=null;
+function songTime(){return songPlaying?Math.min(songBuf.duration,actx.currentTime-songStart):songPos}
+function stopSongNodes(){
+  if(songSrc){songSrc.onended=null;try{songSrc.stop()}catch(e){}songSrc.disconnect();songSrc=null}
+  if(kickBus){kickBus.disconnect();kickBus=null} // 予約済みのキックもまとめて消す
+  if(duckG){duckG.gain.cancelScheduledValues(0);duckG.gain.value=1}
+}
+function playSong(at){
+  if(!songBuf)return;ensureCtx();stopSongNodes();
+  at=Math.max(0,Math.min(at,songBuf.duration-0.01));
+  const t0=actx.currentTime+0.08;
+  songSrc=actx.createBufferSource();songSrc.buffer=songBuf;songSrc.connect(eq);songSrc.start(t0,at);
+  songStart=t0-at;songPlaying=true;
+  kickBus=actx.createGain();kickBus.connect(beatGain);
+  kIdx=0;if(beatMap){let lo=0,hi=beatMap.length;while(lo<hi){const m=(lo+hi)>>1;beatMap[m].t<at?lo=m+1:hi=m}kIdx=lo}
+  const me=songSrc;songSrc.onended=()=>{if(me!==songSrc)return;songPlaying=false;songPos=0;stopSongNodes();$('playBtn').textContent='再生'};
+  scheduleKicks();
+  $('playBtn').textContent='一時停止';
+}
+function pauseSong(){if(!songPlaying)return;songPos=songTime();songPlaying=false;stopSongNodes();$('playBtn').textContent='再生'}
+function scheduleKicks(){ // 0.3秒先まで、曲の再生位置に対してサンプル単位で予約
+  if(!songPlaying||!beatMap||!kickBus||!beatOn)return;
+  const off=boff/1000,horizon=actx.currentTime+0.3;
+  while(kIdx<beatMap.length){
+    const k=beatMap[kIdx],when=songStart+k.t+off-KICK_LEAD;
+    if(when>horizon)break;
+    if(when>=actx.currentTime)playKick(when,k.s,kickBus);
+    kIdx++;
+  }
+}
+setInterval(scheduleKicks,40);
+function resyncBeat(){if(songPlaying)playSong(songTime())}
 /* beat map strip in the panel */
 const strip=$('strip'),sx=strip.getContext('2d');
+strip.onclick=e=>{if(!songBuf)return;const r0=strip.getBoundingClientRect();seekTo((e.clientX-r0.left)/r0.width*songBuf.duration)};
+function seekTo(t){if(songPlaying)playSong(t);else songPos=t}
 function drawStrip(){
   const w=strip.width,hh=strip.height;sx.clearRect(0,0,w,hh);
   sx.font='22px "Zen Kaku Gothic New", sans-serif';sx.textBaseline='middle';
@@ -396,7 +477,7 @@ function drawStrip(){
   if(!beatMap){sx.fillStyle='#9a88b3';sx.fillText(beatEnv===null&&$('beatInfo').textContent.includes('解析中')?'解析中…':'曲を選ぶとキックの位置が表示されます',16,hh/2);return}
   sx.fillStyle=col(0.12);sx.fillRect(0,hh-2,w,2);
   for(const k of beatMap){const x=k.t/beatDur*w,hk=6+k.s*(hh-14);sx.fillStyle=col(0.35+k.s*0.6,0.2);sx.fillRect(x,hh-hk,2,hk)}
-  const x=(audio.currentTime||0)/beatDur*w;sx.fillStyle='#fff';sx.fillRect(x-1,0,2,hh);
+  const x=(actx?songTime():0)/beatDur*w;sx.fillStyle='#fff';sx.fillRect(x-1,0,2,hh);
 }
 
 /* ================= modes ================= */
@@ -404,21 +485,24 @@ let mode='file',live=false,liveStart=0;
 const modes=['file','sys','mic','demo'];
 function showErr(m){$('err').textContent=m||'';$('err').hidden=!m}
 function stopAll(){
-  audio.pause();$('playBtn').textContent='再生';stopDemo();
+  pauseSong();stopDemo();
   if(stream){stream.getTracks().forEach(tr=>tr.stop());stream=null}
   if(streamSrc){try{streamSrc.disconnect()}catch(e){}streamSrc=null}
   live=false;$('sysBtn').textContent='端末の音を取り込む';$('micBtn').textContent='マイクを開始';
 }
 function setMode(m){
-  if(m===mode)return;stopAll();showErr('');mode=m;routeBeat();
+  if(m===mode)return;stopAll();showErr('');mode=m;routeBeat();applyBeatLevel();
   modes.forEach(k=>{$('m-'+k).setAttribute('aria-pressed',k===m);$('p-'+k).hidden=k!==m});
   $('status').textContent='待機中';
 }
 modes.forEach(k=>$('m-'+k).onclick=()=>setMode(k));
 
-$('audioFile').onchange=e=>{const f=e.target.files[0];if(!f)return;audio.src=URL.createObjectURL(f);analyzeFile(f);$('playBtn').disabled=false;$('playBtn').textContent='再生';$('status').textContent=f.name};
-$('playBtn').onclick=async()=>{ensureCtx();await actx.resume();if(audio.paused){await audio.play();$('playBtn').textContent='一時停止'}else{audio.pause();$('playBtn').textContent='再生'}};
-audio.onended=()=>$('playBtn').textContent='再生';
+$('audioFile').onchange=e=>{const f=e.target.files[0];if(!f)return;pauseSong();analyzeFile(f);$('playBtn').textContent='再生';$('status').textContent=f.name};
+$('playBtn').onclick=async()=>{ensureCtx();await actx.resume();songPlaying?pauseSong():playSong(songPos)};
+let seeking=false;
+$('seek').oninput=e=>{seeking=true;$('o-seek').textContent=fmtT(+e.target.value)};
+$('seek').onchange=e=>{seeking=false;seekTo(+e.target.value)};
+const fmtT=x=>{x=Math.max(0,x|0);return`${Math.floor(x/60)}:${String(x%60).padStart(2,'0')}`};
 
 async function startStream(kind){
   ensureCtx();await actx.resume();showErr('');
@@ -464,12 +548,13 @@ function bindSlider(id,fn,fmt=v=>v.toFixed(2)){const el=$(id),o=$('o-'+id);el.on
 const pct=v=>Math.round(v*100)+'%';
 const ramp=(node,v)=>{if(node)node.gain.setTargetAtTime(v,actx.currentTime,0.02)};
 bindSlider('vMusic',v=>{vol.music=v;ramp(musicGain,v)},pct);
-bindSlider('vBeat',v=>{vol.beat=v;ramp(beatGain,v)},pct);
+bindSlider('vBeat',v=>{vol.beat=v;applyBeatLevel()},pct);
 bindSlider('vMaster',v=>{vol.master=v;ramp(master,v)},pct);
 bindSlider('vBass',v=>{vol.bass=v;if(eq)eq.gain.setTargetAtTime(v,actx.currentTime,0.02)},v=>'+'+v+'dB');
 bindSlider('bsens',v=>{bsens=v;pickBeats()});
 bindSlider('boff',v=>{boff=v;resyncBeat()},v=>(v>0?'+':'')+v+'ms');
-$('beatOn').onchange=e=>beatOn=e.target.checked;
+$('beatOn').onchange=e=>{beatOn=e.target.checked;resyncBeat()};
+$('autoStr').onchange=e=>{autoOn=e.target.checked;applyBeatLevel()};
 $('duck').onchange=e=>duckOn=e.target.checked;
 ['punch','808','hard'].forEach(k=>$('k-'+k).onclick=()=>{kickType=k;['punch','808','hard'].forEach(j=>$('k-'+j).setAttribute('aria-pressed',j===k));if(actx){ensureCtx();actx.resume();playKick(actx.currentTime+0.01,0.9)}});
 bindSlider('sens',v=>sens=v);bindSlider('shake',v=>shakeAmt=v);bindSlider('glow',v=>glowAmt=v);
@@ -544,14 +629,14 @@ function ornThumb(x,o,R,S){
 PRESETS.forEach((pr,i)=>{
   const b=document.createElement('button');b.type='button';b.className='pre';b.title=pr.name;b.setAttribute('aria-label',`${i+1}. ${pr.name}`);
   const k=mk(104,104);drawThumb(k,pr);b.appendChild(k);
-  const sp=document.createElement('span');sp.textContent=String(i+1).padStart(2,'0');b.appendChild(sp);
+  const sp=document.createElement('span');sp.textContent=String(i+1).padStart(3,'0');b.appendChild(sp);
   b.onclick=()=>applyPreset(i);$('presets').appendChild(b);preBtns.push(b);
 });
 let tunnelRings=[];
 function applyPreset(i){
   pIdx=(i+PRESETS.length)%PRESETS.length;P=PRESETS[pIdx];SI=shapeInfo(P.shape);
   preBtns.forEach((b,j)=>b.setAttribute('aria-pressed',j===pIdx));
-  $('preName').textContent=`${String(pIdx+1).padStart(2,'0')} ${P.name}`;
+  $('preName').textContent=`${pIdx+1}/${PRESETS.length} ${P.name}`;preBtns[pIdx].scrollIntoView({block:'nearest'});
   $('color').value=P.c1;$('color2').value=P.c2;setColors(P.c1,P.c2);
   pv.clearRect(0,0,W,H);tunnelRings=[];
   if(bgRaw)tintBg();
@@ -565,6 +650,8 @@ document.addEventListener('keydown',e=>{if(e.target.tagName==='INPUT')return;if(
 let selfMute=0,midE=0,prevM=0,mAvg=0.01,lastM=0,prevH=0,hAvg=0.01,lastH=0,midEnv=0,hiEnv=0,kT=[],sT=[],hT=[],energy=0,prevE=0,peak=0.3,avgE=0.2,fluxAvg=0.01,norm=0,hiE=0,pulse=0,lastKick=0,kickCount=0;
 function band(a,b){const hz=actx.sampleRate/analyser.fftSize;const i0=Math.max(1,Math.floor(a/hz)),i1=Math.ceil(b/hz);let sum=0;for(let i=i0;i<=i1;i++)sum+=freq[i];return sum/((i1-i0+1)*255)}
 let nf=null,micPend=0;
+bindSlider('mgate',v=>micGate=v);
+$('relearn').onclick=()=>{nf=null;bFloor=0;liveStart=performance.now();if(live&&mode==='mic')$('status').textContent='周囲のノイズを学習中…'};
 function denoise(now){ // 帯域ごとのノイズ床を追跡して差し引く（スペクトル減算）
   const learning=now-liveStart<1500;
   if(!nf){nf=new Float32Array(freq.length).fill(-1)}
@@ -574,15 +661,36 @@ function denoise(now){ // 帯域ごとのノイズ床を追跡して差し引く
     else if(learning)nf[i]=nf[i]*0.85+v*0.15;
     else if(v<nf[i])nf[i]=nf[i]*0.8+v*0.2;   // 静かになったらすぐ下げる
     else nf[i]+=(v-nf[i])*0.0015;             // 鳴り続けるノイズにはゆっくり追従
-    const cl=v-nf[i]*1.15-6;freq[i]=cl>0?Math.min(255,cl*1.3):0;
+    const cl=v-nf[i]*1.2-10;freq[i]=cl>0?Math.min(255,cl*1.4):0;
   }
   if(learning)return true;
   if($('status').textContent.includes('学習'))$('status').textContent='マイク入力を解析中（ノイズ除去オン）';
   return false;
 }
+let micGate=0.5,bFloor=0,prevMB=0,prevMM=0,prevMH=0;
+function analyseMic(now){ // マイク専用: 音量の自動ゲインを使わず、ノイズ床からの差だけで判定
+  if(denoise(now)){pulse*=0.9;energy=0;norm=0;return}
+  const b=band(40,120),m=band(300,1200),hh=band(5000,12000);
+  bFloor=b<bFloor?bFloor*0.9+b*0.1:bFloor+(b-bFloor)*0.002;
+  const gate=bFloor+0.06+micGate*0.14;
+  energy=Math.max(0,b-gate);norm=Math.min(1,energy/(0.25+micGate*0.1));
+  const bf=b-prevMB;prevMB=b;const mf=Math.max(0,m-prevMM);prevMM=m;const hf=Math.max(0,hh-prevMH);prevMH=hh;
+  hiE=hh;midE=m;
+  let cand=false;
+  if(micPend){cand=b>gate&&now-micPend<70;micPend=0}           // 2フレーム続いたら確定
+  else if(bf>0.05+micGate*0.06&&b>gate&&bf>mf*0.9)micPend=now; // 低音が主役の立ち上がりだけを候補に
+  if(mf>0.07+micGate*0.08&&m>0.2&&now-lastM>130){lastM=now;onSnare(now)}
+  if(hf>0.07+micGate*0.08&&hh>0.15&&now-lastH>90){lastH=now;onHat(now)}
+  if(cand&&now-lastKick>130&&now>selfMute){
+    lastKick=now;const st=Math.min(1,0.5+norm*0.5);hit(st);
+    if(beatOn){playKick(actx.currentTime,st);selfMute=now+320}
+    if($('auto').checked&&++kickCount%32===0)applyPreset(pIdx+1);
+  }
+  const target=norm*sens;pulse+=(target-pulse)*(target>pulse?0.6:0.12);
+}
 function analyse(now){
   analyser.getByteFrequencyData(freq);
-  if(mode==='mic'&&live&&denoise(now)){pulse*=0.9;energy=0;return}
+  if(mode==='mic'&&live){analyseMic(now);return}
   energy=band(30,140);hiE=band(5000,12000);midE=band(250,2000);
   const mf=Math.max(0,midE-prevM);prevM=midE;mAvg=mAvg*0.93+mf*0.07;
   if(mf>Math.max(0.012,mAvg*2.3)&&now-lastM>90){lastM=now;onSnare(now)}
@@ -595,11 +703,6 @@ function analyse(now){
   const byLevel=norm>0.86&&energy>avgE*(1.1+0.15/sens);
   const liveIn=mode==='sys'||mode==='mic';
   let cand=byFlux||byLevel;
-  if(mode==='mic'){ // 次のフレームでもまだ低音が鳴っていたらキックと確定
-    if(micPend){cand=norm>0.6&&energy>0.06;micPend=0}
-    else if(cand&&energy>0.05){micPend=now;cand=false}
-    else cand=false;
-  }
   if(cand&&now-lastKick>115&&!(liveIn&&now<selfMute)){lastKick=now;const st=Math.min(1,0.45+norm*0.6);hit(st);
     if(beatOn&&(live||(mode==='file'&&!beatMap))){playKick(actx.currentTime,st);if(liveIn)selfMute=now+260} // その場でビートを重ねる
     if($('auto').checked&&++kickCount%32===0)applyPreset(pIdx+1)}
@@ -971,7 +1074,7 @@ function drawFlare(p){
 const fmt=x=>{x=Math.max(0,x|0);return`${Math.floor(x/60)}:${String(x%60).padStart(2,'0')}`};
 function curTime(){
   if(mode==='demo'&&demoOn)return actx.currentTime-demoStart;
-  if(mode==='file')return audio.currentTime||0;
+  if(mode==='file')return actx&&songBuf?songTime():0;
   if(live)return(performance.now()-liveStart)/1000;
   return 0;
 }
@@ -979,7 +1082,7 @@ function drawTime(p){
   const y=CY+(P.refl?380:340)*U;
   s.save();s.textAlign='center';s.textBaseline='middle';s.font=`700 ${60*U|0}px "Orbitron", monospace`;
   s.shadowColor=col(1,0.2);s.shadowBlur=18+p*26*glowAmt;s.fillStyle='#f8eeff';s.fillText(fmt(curTime()),CX,y);
-  if(mode==='file'&&audio.duration){const w=220,f=audio.currentTime/audio.duration;s.shadowBlur=10;s.fillStyle=col(0.25);s.fillRect(CX-w/2,y+50,w,3);s.fillStyle=col2(1,0.4);s.fillRect(CX-w/2,y+50,w*f,3)}
+  if(mode==='file'&&songBuf){const w=220*U,f=songTime()/songBuf.duration;s.shadowBlur=10;s.fillStyle=col(0.25);s.fillRect(CX-w/2,y+50,w,3);s.fillStyle=col2(1,0.4);s.fillRect(CX-w/2,y+50,w*f,3)}
   s.restore();
 }
 
@@ -987,9 +1090,10 @@ function drawTime(p){
 const nz=(x,a,b)=>Math.sin(x*a)*0.6+Math.sin(x*b+1.7)*0.4;
 /* ================= auto camera ================= */
 const SHOTS=[ // x,y = 注目する位置（中心からのずれ）, z = ズーム, r = 傾き
-  {x:0,y:0,z:1,r:0,n:'ワイド'},{x:0,y:0,z:1.32,r:0,n:'寄り'},{x:0,y:-150,z:1.45,r:0,n:'上の飾り'},
-  {x:0,y:110,z:1.22,r:-0.04,n:'下から'},{x:-110,y:-40,z:1.4,r:0.06,n:'左寄り'},{x:110,y:-40,z:1.4,r:-0.06,n:'右寄り'},
-  {x:0,y:0,z:1.7,r:0,n:'ロゴ寄り'},{x:0,y:0,z:0.9,r:0,n:'引き'},{x:-60,y:60,z:1.15,r:0.03,n:'斜め'},{x:70,y:-90,z:1.25,r:-0.03,n:'斜め上'}];
+  {x:0,y:0,z:1,r:0,n:'ワイド'},{x:0,y:0,z:1.3,r:0,n:'寄り'},{x:0,y:-120,z:1.4,r:0,n:'上の飾り'},
+  {x:0,y:90,z:1.2,r:-0.03,n:'下から'},{x:-90,y:-30,z:1.35,r:0.04,n:'左寄り'},{x:90,y:-30,z:1.35,r:-0.04,n:'右寄り'},
+  {x:0,y:0,z:1.5,r:0,n:'ロゴ寄り'},{x:0,y:0,z:0.92,r:0,n:'引き'},{x:-50,y:50,z:1.12,r:0.02,n:'斜め'},{x:60,y:-70,z:1.2,r:-0.02,n:'斜め上'}];
+let zoomAmt=0.35;
 let camOn=true,camStyle='auto',inten=0.25,shotT=0,shotIdx=0,snSign=1;
 const cam={x:0,y:0,z:1,r:0,vx:0,vy:0,vz:0,vr:0,tx:0,ty:0,tz:1,tr:0,jx:0,jy:0,ky:0,ri:0,zi:0};
 const lerp=(a,b,k)=>a+(b-a)*k;
@@ -999,9 +1103,9 @@ function nextShot(now,cut){
   const S=SHOTS[i];cam.tx=S.x*U;cam.ty=S.y*U;cam.tz=S.z;cam.tr=S.r;shotT=now;
   if(cut){cam.x=cam.tx;cam.y=cam.ty;cam.z=cam.tz;cam.r=cam.tr;cam.vx=cam.vy=cam.vz=cam.vr=0}
 }
-function camKick(str){if(!camOn)return;const it=camI();cam.zi+=0.05*str*(0.3+it);cam.ky+=12*U*str*it}
+function camKick(str){if(!camOn)return;const it=camI();cam.zi+=0.025*zoomAmt*str*(0.3+it);cam.ky+=10*U*str*it}
 function onSnare(now){sT.push(now);midEnv=1;if(!camOn)return;const it=camI();snSign=-snSign;cam.ri+=snSign*0.035*it*it;cam.jx+=snSign*16*U*it*it}
-function onHat(now){hT.push(now);hiEnv=1;if(!camOn)return;const it=camI();cam.jx+=(Math.random()-.5)*7*U*it*it;cam.jy+=(Math.random()-.5)*7*U*it*it;cam.zi+=0.006*it*it}
+function onHat(now){hT.push(now);hiEnv=1;if(!camOn)return;const it=camI();cam.jx+=(Math.random()-.5)*7*U*it*it;cam.jy+=(Math.random()-.5)*7*U*it*it;cam.zi+=0.003*zoomAmt*it*it}
 function updateCamera(now,dt,playing){
   const cut=now-4000;
   while(kT.length&&kT[0]<cut)kT.shift();while(sT.length&&sT[0]<cut)sT.shift();while(hT.length&&hT[0]<cut)hT.shift();
@@ -1024,11 +1128,13 @@ function updateCamera(now,dt,playing){
   midEnv*=Math.pow(0.82,dt);hiEnv*=Math.pow(0.75,dt);
 }
 $('camOn').onchange=e=>camOn=e.target.checked;
+bindSlider('zoomAmt',v=>zoomAmt=v,pct);
 ['auto','smooth','hard'].forEach(k=>$('cs-'+k).onclick=()=>{camStyle=k;['auto','smooth','hard'].forEach(j=>$('cs-'+j).setAttribute('aria-pressed',j===k))});
 let last=performance.now(),cycleF=0,stripF=0;
 function frame(now){
   const dt=Math.min(3,(now-last)/16.67);last=now;
-  const playing=analyser&&((mode==='file'&&!audio.paused)||(mode==='demo'&&demoOn)||live);
+  const playing=analyser&&((mode==='file'&&songPlaying)||(mode==='demo'&&demoOn)||live);
+  if(songBuf&&!seeking&&stripF%6===0){const st=songTime();$('seek').value=st;$('o-seek').textContent=fmtT(st)}
   if(playing)analyse(now);else{const tg=0.1+0.07*Math.sin(now/650);pulse+=(tg-pulse)*0.05;energy*=0.9}
   if(P.cycle){const h=(now/40)%360;c1=hsl2hex(h,95,62);c2=hsl2hex((h+150)%360,95,65);RGB1=rgb(c1);RGB2=rgb(c2);if(++cycleF%8===0)buildLogo()}
 
@@ -1039,12 +1145,13 @@ function frame(now){
   const ox=70*U*sh*nz(now,0.047,0.131)+cam.jx+Math.sin(now/3700)*22*U*calm;
   const oy=70*U*sh*nz(now+400,0.053,0.117)+cam.jy+cam.ky+Math.sin(now/4300+1)*16*U*calm;
   const ang=0.06*sh*nz(now+900,0.039,0.097)+Math.sin(now/1700)*0.004*pulse+cam.r+cam.ri+Math.sin(now/5100)*0.012*calm;
-  const zoom=(1.05+pulse*0.03*shakeAmt+kickEnv*0.06*Math.min(1,shakeAmt))*cam.z*(1+cam.zi);
+  const camZ=1+(cam.z-1)*zoomAmt,pan=Math.min(1,zoomAmt*1.6);
+  const zoom=(1.04+(pulse*0.02*shakeAmt+kickEnv*0.035*Math.min(1,shakeAmt))*(0.4+zoomAmt))*camZ*(1+cam.zi);
 
   drawEmblem(now,pulse);
 
   s.save();
-  s.translate(CX+ox,CY+oy);s.rotate(ang);s.scale(zoom,zoom);s.translate(-CX-cam.x,-CY-cam.y);
+  s.translate(CX+ox,CY+oy);s.rotate(ang);s.scale(zoom,zoom);s.translate(-CX-cam.x*pan,-CY-cam.y*pan);
   drawBg(now,pulse);
   if(P.trail){ // zooming ghost trail
     s.save();s.globalCompositeOperation='screen';s.globalAlpha=Math.min(1,P.trail*(0.6+kickEnv*0.5));
@@ -1106,7 +1213,6 @@ const fontLoads=['128px "Rubik Glitch"','128px "Audiowide"','110px "Monoton"','1
 (document.fonts?Promise.all(fontLoads.map(f=>document.fonts.load(f))).catch(()=>{}):Promise.resolve()).finally(start);
 
 /* idle hits before any audio so the first view isn't static */
-let idleT=0;setInterval(()=>{if(!analyser&&++idleT%4===0)hit(0.6)},470);
 
 /* ================= recording ================= */
 let rec=null,chunks=[],dl=null;
