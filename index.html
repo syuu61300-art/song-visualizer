@@ -143,9 +143,15 @@ video{width:100%;border-radius:8px}
     <div class="group">
       <span class="cap">背景</span>
       <div class="field">
-        <label for="bgFile">画像または動画（jpg / png / mp4 / webm など）</label>
+        <label for="bgFile">ファイルから（jpg / png / gif / mp4 / webm など）</label>
         <input id="bgFile" type="file" accept="image/*,video/*">
       </div>
+      <div class="field">
+        <label for="bgUrl">リンクから（画像・動画の直接リンク）</label>
+        <div class="row" style="flex-wrap:nowrap"><input id="bgUrl" type="text" inputmode="url" placeholder="https://…/image.jpg" style="flex:1;min-width:0"><button id="bgUrlBtn" type="button" style="flex:none">読み込む</button></div>
+      </div>
+      <p class="hint">画像をコピーしてこのページで <b>Ctrl+V</b>（Macは ⌘+V、スマホは上の欄を長押しして「ペースト」）すると、そのまま背景になります。ファイルを映像の上にドラッグ＆ドロップしても読み込めます。</p>
+      <p class="hint warn" id="bgErr" hidden></p>
       <div class="seg" role="group" aria-label="背景の色">
         <button id="bgm-tint" aria-pressed="true">テーマ色で着色</button>
         <button id="bgm-raw" aria-pressed="false">元の色のまま</button>
@@ -567,18 +573,57 @@ function setColors(a,b,rebuild=true){
 }
 $('color').oninput=e=>setColors(e.target.value,c2);
 $('color2').oninput=e=>setColors(c1,e.target.value);
-let bgVid=null,bgMode='tint',bgDim=0.9;
-function clearBg(){if(bgVid){bgVid.pause();bgVid.removeAttribute('src');bgVid.load();bgVid=null}bgRaw=null;bgTint=null;$('bgFile').value='';$('bgClear').disabled=true}
-$('bgFile').onchange=e=>{
-  const f=e.target.files[0];if(!f)return;const url=URL.createObjectURL(f);
-  if(f.type.startsWith('video')){
-    clearBg();const v=document.createElement('video');v.muted=true;v.loop=true;v.playsInline=true;v.src=url;
-    v.oncanplay=()=>{bgVid=v;v.play().catch(()=>{})};
-  }else{
-    const im=new Image();im.onload=()=>{if(bgVid)clearBg();bgRaw=im;tintBg()};im.src=url;
+let bgVid=null,bgMode='tint',bgDim=0.9,bgTainted=false,bgJob=0;
+function bgMsg(m,warn=true){const el=$('bgErr');el.textContent=m||'';el.hidden=!m;el.classList.toggle('warn',warn)}
+function clearBg(){if(bgVid){bgVid.pause();bgVid.removeAttribute('src');bgVid.load();bgVid=null}bgRaw=null;bgTint=null;bgTainted=false;$('bgFile').value='';$('bgClear').disabled=true;bgMsg('')}
+function setBgImage(im,tainted){if(bgVid){bgVid.pause();bgVid=null}bgRaw=im;bgTainted=tainted;tintBg();$('bgClear').disabled=false}
+function setBgVideo(v,tainted){bgRaw=null;bgTint=null;if(bgVid&&bgVid!==v)bgVid.pause();bgVid=v;bgTainted=tainted;v.play().catch(()=>{});$('bgClear').disabled=false}
+const tryImg=(src,cors)=>new Promise((ok,ng)=>{const im=new Image();if(cors)im.crossOrigin='anonymous';im.onload=()=>ok(im);im.onerror=ng;im.src=src});
+const tryVid=(src,cors)=>new Promise((ok,ng)=>{const v=document.createElement('video');v.muted=true;v.loop=true;v.playsInline=true;if(cors)v.crossOrigin='anonymous';
+  const t=setTimeout(()=>ng(),12000);v.onloadeddata=()=>{clearTimeout(t);ok(v)};v.onerror=()=>{clearTimeout(t);ng()};v.src=src;v.load()});
+function loadBgBlob(f){ // ファイル・貼り付け・ドロップ共通
+  const job=++bgJob,url=URL.createObjectURL(f);bgMsg('');
+  if((f.type||'').startsWith('video'))tryVid(url,false).then(v=>{if(job===bgJob)setBgVideo(v,false)},()=>bgMsg('この動画は読み込めませんでした。mp4（H.264）か webm を試してください。'));
+  else tryImg(url,false).then(im=>{if(job===bgJob)setBgImage(im,false)},()=>bgMsg('この画像は読み込めませんでした。'));
+}
+async function loadBgUrl(src){
+  src=(src||'').trim();if(!src)return;
+  if(!/^(https?:|data:|blob:)/i.test(src)){bgMsg('https:// から始まるリンクを入れてください。');return}
+  const job=++bgJob;bgMsg('読み込み中…',false);
+  const isVid=/\.(mp4|webm|mov|m4v|ogv)(\?|#|$)/i.test(src)||/^data:video/i.test(src);
+  const order=isVid?[[tryVid,true],[tryVid,false],[tryImg,true],[tryImg,false]]:[[tryImg,true],[tryImg,false],[tryVid,true],[tryVid,false]];
+  for(const[fn,cors]of order){
+    try{const m=await fn(src,cors);if(job!==bgJob)return;
+      fn===tryVid?setBgVideo(m,!cors):setBgImage(m,!cors);
+      bgMsg(cors?'':'表示はできますが、このリンク先は外部利用を許可していないため録画できません。画像を保存してファイルから読み込むか、コピー＆貼り付けしてください。',!cors?true:false);
+      return}catch(e){}
   }
-  $('bgClear').disabled=false;
-};
+  if(job!==bgJob)return;
+  bgMsg(/youtube\.com|youtu\.be|tiktok\.com|instagram\.com|x\.com|twitter\.com|pinterest/i.test(src)
+    ?'SNSや動画サイトのページのリンクは使えません。画像そのものを右クリック→「画像をコピー」して、このページに貼り付けてください。'
+    :'読み込めませんでした。画像・動画そのもののリンク（末尾が .jpg / .png / .mp4 など）か確認してください。アーティファクトの画面内では外部リンクが使えないため、HTMLファイルを直接開くか、画像をコピーして貼り付けてください。');
+}
+$('bgFile').onchange=e=>{const f=e.target.files[0];if(f)loadBgBlob(f)};
+$('bgUrlBtn').onclick=()=>loadBgUrl($('bgUrl').value);
+$('bgUrl').addEventListener('keydown',e=>{if(e.key==='Enter')loadBgUrl($('bgUrl').value)});
+document.addEventListener('paste',e=>{
+  const cd=e.clipboardData;if(!cd)return;
+  const file=[...(cd.items||[])].find(it=>it.kind==='file'&&/^(image|video)\//.test(it.type));
+  if(file){e.preventDefault();loadBgBlob(file.getAsFile());$('bgUrl').value='';return}
+  const t=e.target,inBgUrl=t&&t.id==='bgUrl',inOther=t&&/^(INPUT|TEXTAREA)$/.test(t.tagName)&&!inBgUrl;
+  if(inOther)return; // 文字入力欄への普通の貼り付けは邪魔しない
+  let src=(cd.getData('text/uri-list')||cd.getData('text/plain')||'').trim().split(/\s+/)[0];
+  const html=cd.getData('text/html');const m=html&&html.match(/<img[^>]+src=["']([^"']+)/i);
+  if(m&&!/^https?:\/\/\S+\.(jpe?g|png|gif|webp|avif|mp4|webm)/i.test(src))src=m[1];
+  if(/^(https?:|data:(image|video))/i.test(src)){e.preventDefault();$('bgUrl').value=src.startsWith('data:')?'(貼り付けた画像)':src;loadBgUrl(src)}
+});
+for(const el of[$('stage'),document.querySelector('.panel')]){
+  el.addEventListener('dragover',e=>{e.preventDefault()});
+  el.addEventListener('drop',e=>{e.preventDefault();const dt=e.dataTransfer;const f=dt.files&&dt.files[0];
+    if(f&&/^(image|video)\//.test(f.type))loadBgBlob(f);
+    else if(f&&f.type.startsWith('audio')){$('audioFile').files=dt.files;$('audioFile').dispatchEvent(new Event('change'))}
+    else{const u=(dt.getData('text/uri-list')||dt.getData('text/plain')||'').trim();if(u){$('bgUrl').value=u;loadBgUrl(u)}}});
+}
 $('bgClear').onclick=clearBg;
 ['tint','raw'].forEach(k=>$('bgm-'+k).onclick=()=>{bgMode=k;['tint','raw'].forEach(j=>$('bgm-'+j).setAttribute('aria-pressed',j===k));tintBg()});
 bindSlider('bgDim',v=>{bgDim=v;tintBg()},pct);
@@ -1219,6 +1264,7 @@ let rec=null,chunks=[],dl=null;
 if(window.claude&&window.claude.use)window.claude.use('downloads').then(d=>dl=d).catch(()=>{});
 $('recBtn').onclick=()=>{
   if(rec){rec.stop();return}
+  if(bgTainted){$('recOut').innerHTML='<p class="hint warn">今の背景はリンク先の制限で録画できません。背景をファイルか貼り付けで読み込み直してください。</p>';return}
   ensureCtx();
   try{
     const vs=cv.captureStream(60);
