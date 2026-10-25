@@ -1,0 +1,613 @@
+<title>Bass Ring Visualizer</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik+Glitch&family=Orbitron:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;700&display=swap">
+<style>
+/* Layout: 9:16 stage on the left, a narrow control rack on the right; stacks on phones */
+:root{
+  --bg:#07020c; --panel:#120a1c; --well:#0b0612; --line:#2a1b3d; --fg:#ece2f7; --muted:#9a88b3; --accent:#b44dff; --warn:#ffb86b;
+  --ui:"Zen Kaku Gothic New",system-ui,sans-serif; --mono:"Orbitron","Zen Kaku Gothic New",monospace;
+  color-scheme:dark;
+}
+html,body{background:var(--bg);color:var(--fg)}
+body{font-family:var(--ui);padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:16px}
+.wrap{display:flex;gap:20px;justify-content:center;align-items:flex-start;flex-wrap:wrap}
+.stage{position:relative;height:min(90vh,980px);aspect-ratio:9/16;max-width:100%;border-radius:14px;overflow:hidden;background:#000;box-shadow:0 0 0 1px var(--line),0 30px 80px -30px var(--accent)}
+.stage canvas{width:100%;height:100%;display:block}
+.fs{position:absolute;right:10px;bottom:10px;width:auto;flex:none;padding:6px 10px;font-size:11px;opacity:.55;background:rgba(0,0,0,.5)}
+.fs:hover{opacity:1}
+.panel{width:330px;max-width:100%;display:flex;flex-direction:column;gap:16px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px}
+h1{font-family:var(--mono);font-size:15px;letter-spacing:.16em;margin:0;text-transform:uppercase;color:var(--accent)}
+.hint{color:var(--muted);font-size:12.5px;line-height:1.65;margin:0}
+.hint.warn{color:var(--warn)}
+.group{display:flex;flex-direction:column;gap:8px;padding-top:14px;border-top:1px solid var(--line)}
+.cap{font-family:var(--mono);font-size:10px;letter-spacing:.18em;color:var(--muted);text-transform:uppercase}
+.field{display:flex;flex-direction:column;gap:6px}
+.field label,.lbl{font-size:12px;color:var(--muted)}
+.seg{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.seg button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#14041f}
+input[type=text]{background:var(--well);border:1px solid var(--line);color:var(--fg);border-radius:8px;padding:9px 10px;font:inherit}
+input[type=file]{font-size:12px;color:var(--muted);max-width:100%}
+input[type=file]::file-selector-button{background:#1d1229;color:var(--fg);border:1px solid var(--line);border-radius:7px;padding:7px 10px;margin-right:8px;cursor:pointer;font:inherit}
+input[type=range]{accent-color:var(--accent);width:100%}
+input[type=color]{width:46px;height:30px;border:1px solid var(--line);background:none;border-radius:6px;padding:0}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.sl{display:grid;grid-template-columns:76px 1fr 34px;gap:8px;align-items:center;font-size:12px;color:var(--muted)}
+.sl output{font-family:var(--mono);font-size:10.5px;text-align:right;font-variant-numeric:tabular-nums}
+button{font:inherit;font-weight:700;font-size:13px;cursor:pointer;border-radius:9px;padding:10px 12px;border:1px solid var(--line);background:#1d1229;color:var(--fg);flex:1 1 auto}
+button.primary{background:var(--accent);border-color:var(--accent);color:#14041f}
+button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button:disabled{opacity:.45;cursor:not-allowed}
+.meters{display:grid;grid-template-columns:auto 1fr;gap:6px 10px;align-items:center;font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.1em}
+.meter{height:7px;background:var(--well);border-radius:99px;overflow:hidden;border:1px solid var(--line)}
+.meter i{display:block;height:100%;width:0;background:var(--accent);box-shadow:0 0 10px var(--accent)}
+.kick{width:10px;height:10px;border-radius:50%;background:var(--line);display:inline-block;vertical-align:middle;margin-left:6px}
+.status{font-family:var(--mono);font-size:11px;color:var(--fg);letter-spacing:.04em;word-break:break-all}
+.check{display:flex;gap:6px;align-items:center;font-size:12.5px;color:var(--muted)}
+video{width:100%;border-radius:8px}
+.mode-pane[hidden]{display:none!important}
+</style>
+
+<div class="wrap">
+  <div class="stage" id="stage">
+    <canvas id="cv" width="720" height="1280"></canvas>
+    <button class="fs" id="fsBtn" type="button">全画面</button>
+  </div>
+
+  <div class="panel">
+    <h1>Bass Ring</h1>
+    <p class="hint">重低音（約30〜140Hz）のキックを検出して、円の弾み・画面の揺れ・衝撃波・火花・RGBずれを同時に起こします。背景も円もすべてコード描画なので素材は不要です。</p>
+
+    <div class="group">
+      <span class="cap">音の入力</span>
+      <div class="seg" role="group" aria-label="音の入力">
+        <button id="m-file" aria-pressed="true">音楽ファイル</button>
+        <button id="m-sys" aria-pressed="false">端末の音</button>
+        <button id="m-mic" aria-pressed="false">マイク</button>
+        <button id="m-demo" aria-pressed="false">デモビート</button>
+      </div>
+
+      <div class="mode-pane" id="p-file">
+        <div class="field">
+          <label for="audioFile">mp3 / wav / m4a など</label>
+          <input id="audioFile" type="file" accept="audio/*">
+        </div>
+        <div class="row" style="margin-top:8px"><button id="playBtn" class="primary" disabled>再生</button></div>
+      </div>
+      <div class="mode-pane" id="p-sys" hidden>
+        <p class="hint">YouTubeやSpotifyなど、PCで流れている音に反応します。共有画面の選択で<b>「タブ」または「画面全体」</b>を選び、<b>「音声を共有」</b>をオンにしてください。PC版のChrome / Edgeで、このHTMLファイルを直接開いたときに使えます。</p>
+        <div class="row"><button id="sysBtn" class="primary">端末の音を取り込む</button></div>
+      </div>
+      <div class="mode-pane" id="p-mic" hidden>
+        <p class="hint">スピーカーの音をマイクで拾って反応します。スマホでも使えますが、端末の音モードより精度は落ちます。</p>
+        <div class="row"><button id="micBtn" class="primary">マイクを開始</button></div>
+      </div>
+      <div class="mode-pane" id="p-demo" hidden>
+        <p class="hint">その場で合成した128BPMのビートを鳴らします。</p>
+        <div class="row"><button id="demoBtn" class="primary">デモを再生</button></div>
+      </div>
+      <p class="hint warn" id="err" hidden></p>
+    </div>
+
+    <div class="group">
+      <span class="cap">検出</span>
+      <div class="meters">
+        <span>BASS</span><div class="meter"><i id="meter"></i></div>
+        <span>KICK<span class="kick" id="kickDot"></span></span><span class="status" id="status">待機中</span>
+      </div>
+    </div>
+
+    <div class="group">
+      <span class="cap">演出</span>
+      <div class="sl"><label for="sens">反応の強さ</label><input id="sens" type="range" min="0.4" max="2" step="0.05" value="1"><output id="o-sens">1.00</output></div>
+      <div class="sl"><label for="shake">画面の揺れ</label><input id="shake" type="range" min="0" max="2" step="0.05" value="1.2"><output id="o-shake">1.20</output></div>
+      <div class="sl"><label for="glow">発光</label><input id="glow" type="range" min="0" max="1.5" step="0.05" value="0.8"><output id="o-glow">0.80</output></div>
+      <div class="row">
+        <label class="check"><input id="spec" type="checkbox" checked> 外周スペクトラム</label>
+        <label class="check"><input id="crt" type="checkbox" checked> 走査線・ノイズ</label>
+      </div>
+      <div class="row"><span class="lbl">テーマ色</span><input id="color" type="color" value="#b44dff"></div>
+      <div class="field">
+        <label for="logo">中央の文字</label>
+        <input id="logo" type="text" value="RENTHANY" maxlength="16">
+      </div>
+      <div class="field">
+        <label for="bgFile">背景画像（任意・自動で白黒化して色付け）</label>
+        <input id="bgFile" type="file" accept="image/*">
+      </div>
+    </div>
+
+    <div class="group">
+      <span class="cap">書き出し</span>
+      <div class="row"><button id="recBtn">録画開始</button></div>
+      <div id="recOut" class="field"></div>
+    </div>
+  </div>
+</div>
+
+<audio id="audio"></audio>
+
+<script>
+const $=id=>document.getElementById(id);
+const cv=$('cv'),c=cv.getContext('2d');
+const W=720,H=1280,CX=360,CY=610;
+const mk=(w,h)=>{const k=document.createElement('canvas');k.width=w;k.height=h;return k};
+const scene=mk(W,H),s=scene.getContext('2d');
+const tmp=mk(W,H),t=tmp.getContext('2d');
+const bl1=mk(180,320),b1=bl1.getContext('2d');
+const bl2=mk(60,107),b2=bl2.getContext('2d');
+const audio=$('audio');
+
+let accent='#b44dff',sens=1,shakeAmt=1.2,glowAmt=0.8,showSpec=true,crt=true,logo='RENTHANY',bgTint=null,bgRaw=null;
+const rgb=h=>{const n=parseInt(h.slice(1),16);return[(n>>16)&255,(n>>8)&255,n&255]};
+function col(a,mix=0){let[r,g,b]=rgb(accent);r+=(255-r)*mix;g+=(255-g)*mix;b+=(255-b)*mix;return`rgba(${r|0},${g|0},${b|0},${a})`}
+
+/* ================= audio graph ================= */
+let actx,analyser,freq,bus,outGain,recDest,mediaSrc,demoGain,streamSrc=null,stream=null;
+function ensureCtx(){
+  if(actx)return;
+  actx=new (window.AudioContext||window.webkitAudioContext)();
+  analyser=actx.createAnalyser();analyser.fftSize=2048;analyser.smoothingTimeConstant=0.4;
+  freq=new Uint8Array(analyser.frequencyBinCount);
+  bus=actx.createGain();bus.connect(analyser);
+  try{recDest=actx.createMediaStreamDestination();bus.connect(recDest)}catch(e){}
+  outGain=actx.createGain();outGain.connect(actx.destination);
+  mediaSrc=actx.createMediaElementSource(audio);mediaSrc.connect(bus);mediaSrc.connect(outGain);
+  demoGain=actx.createGain();demoGain.gain.value=0.9;demoGain.connect(bus);demoGain.connect(outGain);
+}
+
+/* ================= modes ================= */
+let mode='file',live=false,liveStart=0;
+const modes=['file','sys','mic','demo'];
+function showErr(m){$('err').textContent=m||'';$('err').hidden=!m}
+function stopAll(){
+  audio.pause();$('playBtn').textContent='再生';
+  stopDemo();
+  if(stream){stream.getTracks().forEach(tr=>tr.stop());stream=null}
+  if(streamSrc){try{streamSrc.disconnect()}catch(e){}streamSrc=null}
+  live=false;$('sysBtn').textContent='端末の音を取り込む';$('micBtn').textContent='マイクを開始';
+}
+function setMode(m){
+  if(m===mode)return;
+  stopAll();showErr('');mode=m;
+  modes.forEach(k=>{$('m-'+k).setAttribute('aria-pressed',k===m);$('p-'+k).hidden=k!==m});
+  $('status').textContent='待機中';
+}
+modes.forEach(k=>$('m-'+k).onclick=()=>setMode(k));
+
+$('audioFile').onchange=e=>{
+  const f=e.target.files[0];if(!f)return;
+  audio.src=URL.createObjectURL(f);
+  $('playBtn').disabled=false;$('playBtn').textContent='再生';
+  $('status').textContent=f.name;
+};
+$('playBtn').onclick=async()=>{
+  ensureCtx();await actx.resume();
+  if(audio.paused){await audio.play();$('playBtn').textContent='一時停止'}
+  else{audio.pause();$('playBtn').textContent='再生'}
+};
+audio.onended=()=>$('playBtn').textContent='再生';
+
+async function startStream(kind){
+  ensureCtx();await actx.resume();showErr('');
+  if(live){stopAll();$('status').textContent='停止';return}
+  try{
+    if(kind==='sys'){
+      if(!navigator.mediaDevices||!navigator.mediaDevices.getDisplayMedia)throw new Error('unsupported');
+      stream=await navigator.mediaDevices.getDisplayMedia({video:true,audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false},systemAudio:'include'});
+      if(!stream.getAudioTracks().length){stream.getTracks().forEach(tr=>tr.stop());stream=null;showErr('音声が共有されていません。もう一度押して「音声を共有」をオンにしてください（macOSは「タブ」を選ぶと音声を共有できます）。');return}
+    }else{
+      stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+    }
+    streamSrc=actx.createMediaStreamSource(new MediaStream(stream.getAudioTracks()));
+    streamSrc.connect(bus); // 解析のみ。スピーカーには戻さない（ハウリング防止）
+    stream.getTracks().forEach(tr=>tr.onended=()=>{stopAll();$('status').textContent='共有が終了しました'});
+    live=true;liveStart=performance.now();
+    $(kind==='sys'?'sysBtn':'micBtn').textContent='停止';
+    $('status').textContent=kind==='sys'?'端末の音を解析中':'マイク入力を解析中';
+  }catch(err){
+    stream=null;
+    showErr(kind==='sys'
+      ?'このページ内では端末の音を取り込めません。添付のHTMLファイルをPCのChrome / Edgeで直接開いてお使いください。'
+      :'マイクを使えませんでした。ブラウザのマイク許可を確認するか、HTMLファイルを直接開いてお使いください。');
+  }
+}
+$('sysBtn').onclick=()=>startStream('sys');
+$('micBtn').onclick=()=>startStream('mic');
+
+/* ---------- demo beat ---------- */
+let demoOn=false,demoTimer=null,nextT=0,step=0,demoStart=0,noiseBuf=null;
+const BPM=128,SPB=60/BPM/4;
+function kick(tt){const o=actx.createOscillator(),g=actx.createGain();o.frequency.setValueAtTime(170,tt);o.frequency.exponentialRampToValueAtTime(42,tt+0.13);g.gain.setValueAtTime(1,tt);g.gain.exponentialRampToValueAtTime(0.001,tt+0.45);o.connect(g).connect(demoGain);o.start(tt);o.stop(tt+0.5)}
+function hat(tt,v,len=0.05){if(!noiseBuf){noiseBuf=actx.createBuffer(1,actx.sampleRate*0.3,actx.sampleRate);const d=noiseBuf.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1}
+  const sr=actx.createBufferSource(),f=actx.createBiquadFilter(),g=actx.createGain();sr.buffer=noiseBuf;f.type='highpass';f.frequency.value=len>0.1?1800:7000;g.gain.setValueAtTime(v,tt);g.gain.exponentialRampToValueAtTime(0.001,tt+len);sr.connect(f).connect(g).connect(demoGain);sr.start(tt);sr.stop(tt+len+0.02)}
+function sub(tt,hz){const o=actx.createOscillator(),f=actx.createBiquadFilter(),g=actx.createGain();o.type='sawtooth';o.frequency.value=hz;f.type='lowpass';f.frequency.value=240;g.gain.setValueAtTime(0.0001,tt);g.gain.exponentialRampToValueAtTime(0.26,tt+0.02);g.gain.exponentialRampToValueAtTime(0.001,tt+SPB*3);o.connect(f).connect(g).connect(demoGain);o.start(tt);o.stop(tt+SPB*3.2)}
+const bassLine=[55,0,0,55,0,0,65.4,0,49,0,0,49,0,0,61.7,0];
+function schedule(){
+  while(nextT<actx.currentTime+0.12){
+    const st=step%16,bar=Math.floor(step/16)%4;
+    if(st%4===0||st===10||(bar===3&&st===14))kick(nextT);
+    hat(nextT,st%2?0.12:0.04);
+    if(st===4||st===12)hat(nextT,0.35,0.18);
+    if(bassLine[st])sub(nextT,bassLine[st]);
+    nextT+=SPB;step++;
+  }
+}
+async function startDemo(){
+  ensureCtx();await actx.resume();
+  demoOn=true;step=0;nextT=actx.currentTime+0.05;demoStart=nextT;
+  demoTimer=setInterval(schedule,25);schedule();
+  $('demoBtn').textContent='デモを停止';$('status').textContent='デモビート 128 BPM';
+}
+function stopDemo(){if(!demoOn)return;demoOn=false;clearInterval(demoTimer);$('demoBtn').textContent='デモを再生'}
+$('demoBtn').onclick=()=>demoOn?stopDemo():startDemo();
+
+/* ---------- settings ---------- */
+function bindSlider(id,fn){const el=$(id),o=$('o-'+id);el.oninput=()=>{fn(+el.value);o.textContent=(+el.value).toFixed(2)}}
+bindSlider('sens',v=>sens=v);bindSlider('shake',v=>shakeAmt=v);bindSlider('glow',v=>glowAmt=v);
+$('spec').onchange=e=>showSpec=e.target.checked;
+$('crt').onchange=e=>crt=e.target.checked;
+$('logo').oninput=e=>{logo=e.target.value;buildLogo()};
+$('color').oninput=e=>{accent=e.target.value;document.documentElement.style.setProperty('--accent',accent);buildLogo();tintBg()};
+$('bgFile').onchange=e=>{const f=e.target.files[0];if(!f)return;const im=new Image();im.onload=()=>{bgRaw=im;tintBg()};im.src=URL.createObjectURL(f)};
+$('fsBtn').onclick=()=>{const el=$('stage');(el.requestFullscreen?el.requestFullscreen():Promise.reject()).catch(()=>{})};
+
+function tintBg(){
+  if(!bgRaw){bgTint=null;return}
+  const k=mk(W*1.15|0,H*1.15|0),x=k.getContext('2d');
+  const sc=Math.max(k.width/bgRaw.width,k.height/bgRaw.height),w=bgRaw.width*sc,h=bgRaw.height*sc;
+  x.filter='grayscale(1) contrast(1.8) brightness(0.9)';x.drawImage(bgRaw,(k.width-w)/2,(k.height-h)/2,w,h);x.filter='none';
+  x.globalCompositeOperation='multiply';x.fillStyle=accent;x.fillRect(0,0,k.width,k.height);
+  bgTint=k;
+}
+
+/* ================= analysis ================= */
+let energy=0,prevE=0,peak=0.3,avgE=0.2,fluxAvg=0.01,norm=0,hiE=0,pulse=0,lastKick=0;
+function band(a,b){const hz=actx.sampleRate/analyser.fftSize;const i0=Math.max(1,Math.floor(a/hz)),i1=Math.ceil(b/hz);let sum=0;for(let i=i0;i<=i1;i++)sum+=freq[i];return sum/((i1-i0+1)*255)}
+function analyse(now){
+  analyser.getByteFrequencyData(freq);
+  energy=band(30,140);hiE=band(4000,12000);
+  peak=Math.max(energy,peak*0.9985,0.12);
+  norm=energy/peak;                         // 音量差を吸収する自動ゲイン
+  const flux=Math.max(0,energy-prevE);prevE=energy;
+  fluxAvg=fluxAvg*0.92+flux*0.08;
+  avgE=avgE*0.96+energy*0.04;
+  const byFlux=flux>Math.max(0.018,fluxAvg*(1.9/sens))&&norm>0.55;
+  const byLevel=norm>0.86&&energy>avgE*(1.1+0.15/sens);
+  if((byFlux||byLevel)&&now-lastKick>115){lastKick=now;hit(Math.min(1,0.45+norm*0.6))}
+  const target=Math.pow(Math.max(0,(norm-0.3)/0.7),1.4)*sens;
+  pulse+=(target-pulse)*(target>pulse?0.7:0.16);
+}
+
+/* ================= fx state ================= */
+let kickEnv=0,trauma=0,flash=0,split=0,rot=0,rot2=0;
+const waves=[],sparks=[];
+function hit(str){
+  kickEnv=1;flash=str;split=str;
+  trauma=Math.min(1,trauma+0.55*str);
+  waves.push({r:curR,life:1,w:10*str});
+  const n=18+(str*22|0);
+  for(let i=0;i<n;i++){const a=Math.random()*Math.PI*2,v=8+Math.random()*16*str;sparks.push({x:CX+Math.cos(a)*curR,y:CY+Math.sin(a)*curR,vx:Math.cos(a)*v,vy:Math.sin(a)*v,life:1,d:0.02+Math.random()*0.03})}
+  if(sparks.length>400)sparks.splice(0,sparks.length-400);
+}
+
+/* ================= static layers ================= */
+const streaks=Array.from({length:110},(_,i)=>{const z=i%3;return{x:Math.random()*W*1.4,y:Math.random()*H,z,l:[10,18,30][z],v:[2,3.5,6][z],a:[0.25,0.45,0.8][z],w:[1,1.5,2.4][z]}});
+const dust=Array.from({length:26},()=>({x:Math.random()*W,y:Math.random()*H,r:2+Math.random()*7,vx:(Math.random()-.5)*0.25,vy:-0.1-Math.random()*0.3,ph:Math.random()*6}));
+const blobs=Array.from({length:7},(_,i)=>({x:Math.random()*W,y:Math.random()*H,r:240+Math.random()*300,sx:(Math.random()-.5)*0.3,sy:(Math.random()-.5)*0.3,p:i}));
+const grain=mk(256,256);{const g=grain.getContext('2d'),id=g.createImageData(256,256);for(let i=0;i<id.data.length;i+=4){const v=Math.random()*255;id.data[i]=id.data[i+1]=id.data[i+2]=v;id.data[i+3]=255}g.putImageData(id,0,0)}
+const scan=mk(4,4);{const g=scan.getContext('2d');g.fillStyle='rgba(0,0,0,0.28)';g.fillRect(0,0,4,1)}
+const vig=mk(W,H);{const g=vig.getContext('2d'),v=g.createRadialGradient(CX,H/2,H*0.22,CX,H/2,H*0.72);v.addColorStop(0,'rgba(0,0,0,0)');v.addColorStop(1,'rgba(0,0,0,0.82)');g.fillStyle=v;g.fillRect(0,0,W,H)}
+let grainPat=null,scanPat=null;
+
+/* logo cached with glow */
+const logoC=mk(820,300),lg=logoC.getContext('2d');
+function buildLogo(){
+  lg.clearRect(0,0,820,300);
+  let fs=128;lg.font=`${fs}px "Rubik Glitch", Impact, sans-serif`;
+  const w=lg.measureText(logo).width;if(w>600){fs*=600/w;lg.font=`${fs}px "Rubik Glitch", Impact, sans-serif`}
+  lg.textAlign='center';lg.textBaseline='middle';
+  lg.save();lg.translate(410,150);lg.transform(1,0,-0.2,1,0,0);
+  lg.shadowColor=col(1,0.1);lg.shadowBlur=40;lg.fillStyle=col(1,0.55);lg.fillText(logo,0,0);
+  lg.shadowBlur=12;lg.fillStyle='#fdf6ff';lg.fillText(logo,0,0);
+  lg.shadowBlur=0;lg.lineWidth=1.2;lg.strokeStyle=col(0.9,0.2);lg.strokeText(logo,0,0);
+  lg.restore();
+}
+
+/* ================= drawing ================= */
+let curR=225;
+function drawBg(now,p){
+  s.fillStyle='#030006';s.fillRect(-80,-80,W+160,H+160);
+  if(bgTint){
+    const z=1+p*0.03+kickEnv*0.035,w=bgTint.width*z,h=bgTint.height*z;
+    s.drawImage(bgTint,CX-w/2,H/2-h/2,w,h);
+  }else{
+    s.save();s.globalCompositeOperation='lighter';
+    for(const b of blobs){
+      b.x+=b.sx*(1+p*3);b.y+=b.sy*(1+p*3);
+      if(b.x<-250||b.x>W+250)b.sx*=-1;if(b.y<-250||b.y>H+250)b.sy*=-1;
+      const r=b.r*(1+p*0.15),g=s.createRadialGradient(b.x,b.y,0,b.x,b.y,r);
+      g.addColorStop(0,col(0.13+0.05*Math.sin(now/1100+b.p)));g.addColorStop(1,col(0));
+      s.fillStyle=g;s.fillRect(b.x-r,b.y-r,r*2,r*2);
+    }
+    s.restore();
+  }
+  // core glow behind the ring
+  const g=s.createRadialGradient(CX,CY,curR*0.4,CX,CY,curR*2.4);
+  g.addColorStop(0,col(0.42+p*0.35,0.15));g.addColorStop(0.45,col(0.12+p*0.12));g.addColorStop(1,col(0));
+  s.fillStyle=g;s.fillRect(-80,-80,W+160,H+160);
+}
+
+function drawDust(now,p){
+  s.save();s.globalCompositeOperation='lighter';
+  for(const d of dust){
+    d.x+=d.vx;d.y+=d.vy*(1+p*2);if(d.y<-20){d.y=H+20;d.x=Math.random()*W}
+    const a=0.1+0.08*Math.sin(now/700+d.ph)+p*0.08,r=d.r*(1+p*0.4);
+    const g=s.createRadialGradient(d.x,d.y,0,d.x,d.y,r*3);g.addColorStop(0,col(a,0.5));g.addColorStop(1,col(0));
+    s.fillStyle=g;s.fillRect(d.x-r*3,d.y-r*3,r*6,r*6);
+  }
+  s.restore();
+}
+
+function drawStreaks(p){
+  s.save();s.lineCap='round';
+  const sp=1+p*2.5+kickEnv*5;
+  for(const q of streaks){
+    q.x-=q.v*0.4*sp;q.y+=q.v*sp;
+    if(q.y>H+40||q.x<-40){q.y=-40-Math.random()*200;q.x=Math.random()*W*1.4}
+    const len=q.l*(1+kickEnv*1.5);
+    s.strokeStyle=col(q.a*(0.7+hiE),0.7);s.lineWidth=q.w;
+    s.beginPath();s.moveTo(q.x,q.y);s.lineTo(q.x+len*0.4,q.y-len);s.stroke();
+  }
+  s.restore();
+}
+
+function drawWaves(){
+  s.save();s.globalCompositeOperation='lighter';
+  for(let i=waves.length-1;i>=0;i--){
+    const w=waves[i];w.r+=10+w.life*16;w.life-=0.028;
+    if(w.life<=0){waves.splice(i,1);continue}
+    s.strokeStyle=col(w.life*0.7,0.4);s.lineWidth=w.w*w.life+1;
+    s.beginPath();s.arc(CX,CY,w.r,0,Math.PI*2);s.stroke();
+    s.strokeStyle=col(w.life*0.25);s.lineWidth=w.w*3*w.life;
+    s.beginPath();s.arc(CX,CY,w.r-6,0,Math.PI*2);s.stroke();
+  }
+  s.restore();
+}
+
+function drawSparks(){
+  s.save();s.globalCompositeOperation='lighter';s.lineCap='round';
+  for(let i=sparks.length-1;i>=0;i--){
+    const k=sparks[i];k.x+=k.vx;k.y+=k.vy;k.vx*=0.93;k.vy*=0.93;k.vy+=0.15;k.life-=k.d;
+    if(k.life<=0){sparks.splice(i,1);continue}
+    s.strokeStyle=col(k.life,0.6);s.lineWidth=2.2*k.life+0.4;
+    s.beginPath();s.moveTo(k.x,k.y);s.lineTo(k.x-k.vx*2.2,k.y-k.vy*2.2);s.stroke();
+  }
+  s.restore();
+}
+
+function drawRing(now,p){
+  const R=curR=225*(1+p*0.14+kickEnv*0.07);
+  rot+=0.003+kickEnv*0.03+p*0.004;rot2-=0.005+kickEnv*0.02;
+  s.save();s.translate(CX,CY);
+
+  // mirrored spectrum
+  if(showSpec&&analyser){
+    const n=60;s.save();s.globalCompositeOperation='lighter';
+    for(let side=-1;side<=1;side+=2){
+      for(let i=0;i<n;i++){
+        const v=freq[2+Math.floor(Math.pow(i/n,1.7)*260)]/255;
+        const a=-Math.PI/2+side*(i+0.5)/n*Math.PI;
+        const len=3+v*v*95*sens;
+        s.save();s.rotate(a);
+        s.fillStyle=col(0.2+v*0.7,0.35+v*0.4);
+        s.fillRect(R+56,-2.2,len,4.4);
+        s.restore();
+      }
+    }
+    s.restore();
+  }
+
+  // segmented outer arcs
+  s.save();s.rotate(rot);s.lineCap='round';
+  s.strokeStyle=col(0.55,0.3);s.lineWidth=3;
+  for(let i=0;i<3;i++){const a0=i*Math.PI*2/3;s.beginPath();s.arc(0,0,R+40,a0,a0+0.8+p*0.6);s.stroke()}
+  s.rotate(-rot*2.4);s.strokeStyle=col(0.35,0.5);s.lineWidth=1.5;
+  for(let i=0;i<6;i++){const a0=i*Math.PI/3;s.beginPath();s.arc(0,0,R+48,a0,a0+0.25);s.stroke()}
+  s.restore();
+
+  // tick gauge
+  s.save();s.rotate(rot*0.6);
+  for(let i=0;i<120;i++){
+    const big=i%10===0;s.fillStyle=col(big?0.8:0.3,0.4);
+    s.fillRect(R+22,-0.8,big?12:6,big?2.2:1.4);s.rotate(Math.PI*2/120);
+  }
+  s.restore();
+
+  // dark core
+  const cg=s.createRadialGradient(0,0,0,0,0,R);
+  cg.addColorStop(0,'rgba(4,0,10,0.96)');cg.addColorStop(0.82,'rgba(8,0,18,0.92)');cg.addColorStop(1,col(0.35));
+  s.fillStyle=cg;s.beginPath();s.arc(0,0,R-4,0,Math.PI*2);s.fill();
+
+  // inner dashed ring
+  s.save();s.rotate(rot2);s.setLineDash([2,10]);s.strokeStyle=col(0.45,0.5);s.lineWidth=2;
+  s.beginPath();s.arc(0,0,R-42,0,Math.PI*2);s.stroke();s.restore();
+
+  // main outline, slightly deformed by the bass
+  s.save();
+  s.shadowColor=col(1,0.1);s.shadowBlur=24+p*40*glowAmt+kickEnv*30;
+  s.beginPath();
+  const N=160;
+  for(let i=0;i<=N;i++){
+    const a=i/N*Math.PI*2;
+    const v=analyser?freq[3+((i<N/2?i:N-i)%24)]/255:0;
+    const r=R+Math.sin(a*6+now/300)*p*3+v*v*kickEnv*9;
+    i?s.lineTo(Math.cos(a)*r,Math.sin(a)*r):s.moveTo(Math.cos(a)*r,Math.sin(a)*r);
+  }
+  s.closePath();s.strokeStyle=col(1,0.85);s.lineWidth=7;s.stroke();
+  s.lineWidth=2;s.strokeStyle='#ffffff';s.stroke();
+  s.beginPath();s.arc(0,0,R-16,0,Math.PI*2);s.lineWidth=3;s.strokeStyle=col(0.85,0.55);s.stroke();
+  // spikes
+  const L=32+p*36+kickEnv*26;
+  for(const deg of[-125,-55,55,125]){
+    s.save();s.rotate(deg*Math.PI/180+Math.sin(rot*1.3)*0.12);
+    s.fillStyle='#ffffff';
+    s.beginPath();s.moveTo(R-17,-16);s.lineTo(R-17,16);s.lineTo(R-17-L,0);s.closePath();s.fill();
+    s.fillStyle=col(0.9,0.5);
+    s.beginPath();s.moveTo(R+8,-7);s.lineTo(R+8,7);s.lineTo(R+8+L*0.35,0);s.closePath();s.fill();
+    s.restore();
+  }
+  s.restore();
+
+  // logo with slice glitch
+  const sc=R/225*0.82,lw=logoC.width*sc,lh=logoC.height*sc;
+  if(kickEnv>0.25){
+    const strips=9,sh=logoC.height/strips;
+    s.save();s.globalCompositeOperation='lighter';s.globalAlpha=0.55*kickEnv;
+    s.filter='hue-rotate(60deg)';s.drawImage(logoC,-lw/2-kickEnv*14,-lh/2,lw,lh);
+    s.filter='hue-rotate(-90deg)';s.drawImage(logoC,-lw/2+kickEnv*14,-lh/2,lw,lh);
+    s.filter='none';s.restore();
+    for(let i=0;i<strips;i++){
+      const off=(Math.random()-.5)*kickEnv*46*(Math.random()<0.5?1:0.2);
+      s.drawImage(logoC,0,i*sh,logoC.width,sh,-lw/2+off,-lh/2+i*sh*sc,lw,sh*sc+0.5);
+    }
+  }else s.drawImage(logoC,-lw/2,-lh/2,lw,lh);
+
+  s.restore();
+}
+
+function drawFlare(p){
+  const a=Math.min(1,kickEnv*0.8+p*0.15)*glowAmt;
+  if(a<0.03)return;
+  s.save();s.globalCompositeOperation='lighter';
+  const g=s.createLinearGradient(0,0,W,0);
+  g.addColorStop(0,col(0));g.addColorStop(0.5,col(a,0.7));g.addColorStop(1,col(0));
+  s.fillStyle=g;s.fillRect(-80,CY-2,W+160,4);
+  s.globalAlpha=0.4;s.fillRect(-80,CY-10,W+160,20);
+  s.restore();
+}
+
+const fmt=x=>{x=Math.max(0,x|0);return`${Math.floor(x/60)}:${String(x%60).padStart(2,'0')}`};
+function curTime(){
+  if(mode==='demo'&&demoOn)return actx.currentTime-demoStart;
+  if(mode==='file')return audio.currentTime||0;
+  if(live)return(performance.now()-liveStart)/1000;
+  return 0;
+}
+function drawTime(p){
+  const y=CY+340;
+  s.save();s.textAlign='center';s.textBaseline='middle';
+  s.font='700 60px "Orbitron", monospace';
+  s.shadowColor=col(1,0.2);s.shadowBlur=18+p*26*glowAmt;s.fillStyle='#f8eeff';
+  s.fillText(fmt(curTime()),CX,y);
+  if(mode==='file'&&audio.duration){
+    const w=220,f=audio.currentTime/audio.duration;
+    s.shadowBlur=10;s.fillStyle=col(0.25);s.fillRect(CX-w/2,y+50,w,3);
+    s.fillStyle=col(1,0.5);s.fillRect(CX-w/2,y+50,w*f,3);
+  }
+  s.restore();
+}
+
+/* ================= compose ================= */
+const nz=(x,a,b)=>Math.sin(x*a)*0.6+Math.sin(x*b+1.7)*0.4;
+let last=performance.now(),meterE=0;
+function frame(now){
+  const dt=Math.min(3,(now-last)/16.67);last=now;
+  const playing=analyser&&((mode==='file'&&!audio.paused)||(mode==='demo'&&demoOn)||live);
+  if(playing)analyse(now);
+  else{const tgt=0.1+0.07*Math.sin(now/650);pulse+=(tgt-pulse)*0.05;energy*=0.9;if(!analyser)freq=null}
+
+  kickEnv*=Math.pow(0.86,dt);flash*=Math.pow(0.8,dt);split*=Math.pow(0.84,dt);
+  trauma=Math.max(0,trauma-0.03*dt);
+  const sh=trauma*trauma*shakeAmt;
+  const ox=70*sh*nz(now,0.047,0.131),oy=70*sh*nz(now+400,0.053,0.117);
+  const ang=0.06*sh*nz(now+900,0.039,0.097)+Math.sin(now/1700)*0.004*pulse;
+  const zoom=1.05+pulse*0.03*shakeAmt+kickEnv*0.06*Math.min(1,shakeAmt);
+
+  // scene
+  s.save();
+  s.translate(CX+ox,CY+oy);s.rotate(ang);s.scale(zoom,zoom);s.translate(-CX,-CY);
+  drawBg(now,pulse);drawDust(now,pulse);drawStreaks(pulse);drawWaves();
+  drawRing(now,pulse);drawSparks();drawFlare(pulse);drawTime(pulse);
+  s.restore();
+
+  // RGB split on hits
+  c.globalCompositeOperation='source-over';c.globalAlpha=1;
+  const dx=split*14*Math.max(0.3,shakeAmt);
+  if(dx>0.8){
+    c.fillStyle='#000';c.fillRect(0,0,W,H);
+    const chans=[['#ff0000',dx,0],['#00ff00',0,0],['#0000ff',-dx,dx*0.3]];
+    for(const[cc,x,y]of chans){
+      t.globalCompositeOperation='source-over';t.drawImage(scene,0,0);
+      t.globalCompositeOperation='multiply';t.fillStyle=cc;t.fillRect(0,0,W,H);
+      c.globalCompositeOperation='lighter';c.drawImage(tmp,x,y);
+    }
+    c.globalCompositeOperation='source-over';
+    // horizontal tear slices
+    const n=(split*7)|0;
+    for(let i=0;i<n;i++){const y=Math.random()*H,h=4+Math.random()*50,o=(Math.random()-.5)*split*90;c.drawImage(cv,0,y,W,h,o,y,W,h)}
+  }else c.drawImage(scene,0,0);
+
+  // bloom
+  if(glowAmt>0){
+    b1.clearRect(0,0,180,320);b1.drawImage(scene,0,0,180,320);
+    b2.clearRect(0,0,60,107);b2.drawImage(bl1,0,0,60,107);
+    c.globalCompositeOperation='lighter';
+    c.globalAlpha=(0.22+pulse*0.25+kickEnv*0.2)*glowAmt;c.drawImage(bl1,0,0,W,H);
+    c.globalAlpha=(0.3+pulse*0.3+kickEnv*0.3)*glowAmt;c.drawImage(bl2,0,0,W,H);
+    c.globalAlpha=1;c.globalCompositeOperation='source-over';
+  }
+
+  // overlays
+  if(crt){
+    scanPat=scanPat||c.createPattern(scan,'repeat');grainPat=grainPat||c.createPattern(grain,'repeat');
+    c.fillStyle=scanPat;c.fillRect(0,0,W,H);
+    c.save();c.globalAlpha=0.07;c.globalCompositeOperation='overlay';
+    c.translate(-Math.random()*256,-Math.random()*256);c.fillStyle=grainPat;c.fillRect(0,0,W+256,H+256);c.restore();
+  }
+  c.drawImage(vig,0,0);
+  if(flash>0.05){c.fillStyle=col(flash*0.16*Math.min(1.4,shakeAmt+0.2),0.8);c.fillRect(0,0,W,H)}
+
+  // panel meters
+  meterE+=(energy-meterE)*0.4;
+  $('meter').style.width=Math.min(100,(playing?norm:0)*100)+'%';
+  $('kickDot').style.background=kickEnv>0.5?accent:'';
+  requestAnimationFrame(frame);
+}
+
+const start=()=>{buildLogo();requestAnimationFrame(frame)};
+(document.fonts?Promise.all([document.fonts.load('128px "Rubik Glitch"'),document.fonts.load('700 60px "Orbitron"')]).catch(()=>{}):Promise.resolve()).finally(start);
+
+/* demo hits while idle so the first view isn't static */
+let idleT=0;setInterval(()=>{const playing=analyser&&((mode==='file'&&!audio.paused)||(mode==='demo'&&demoOn)||live);if(!analyser&&++idleT%4===0)hit(0.6)},470);
+
+/* ================= recording ================= */
+let rec=null,chunks=[],dl=null;
+if(window.claude&&window.claude.use)window.claude.use('downloads').then(d=>dl=d).catch(()=>{});
+$('recBtn').onclick=()=>{
+  if(rec){rec.stop();return}
+  ensureCtx();
+  try{
+    const vs=cv.captureStream(60);
+    const tracks=[...vs.getVideoTracks(),...(recDest?recDest.stream.getAudioTracks():[])];
+    const types=['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm','video/mp4'];
+    const mt=types.find(x=>window.MediaRecorder&&MediaRecorder.isTypeSupported(x))||'';
+    rec=new MediaRecorder(new MediaStream(tracks),mt?{mimeType:mt,videoBitsPerSecond:10e6}:undefined);
+    chunks=[];rec.ondataavailable=e=>e.data.size&&chunks.push(e.data);
+    rec.onstop=()=>{
+      const type=rec.mimeType||'video/webm',ext=type.includes('mp4')?'mp4':'webm';
+      const blob=new Blob(chunks,{type}),url=URL.createObjectURL(blob);
+      const box=$('recOut');box.innerHTML='';
+      const v=document.createElement('video');v.controls=true;v.src=url;box.appendChild(v);
+      const b=document.createElement('button');b.textContent='動画を保存';
+      b.onclick=async()=>{
+        if(dl){try{await dl.save({filename:'bass-ring.'+ext,data:blob})}catch(e){}return}
+        const a=document.createElement('a');a.href=url;a.download='bass-ring.'+ext;document.body.appendChild(a);a.click();a.remove();
+      };
+      box.appendChild(b);
+      rec=null;$('recBtn').textContent='録画開始';
+    };
+    rec.start(200);$('recBtn').textContent='録画停止';
+  }catch(err){$('recOut').innerHTML='<p class="hint warn">このブラウザでは録画できません。画面収録をご利用ください。</p>';rec=null}
+};
+</script>
